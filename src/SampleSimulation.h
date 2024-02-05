@@ -21,9 +21,9 @@ class SampleSimulation
 {
     public:
         SampleSimulation(const Model *model);
-        void simulate();
-        void resize(const gdt::vec3i &newSize);
-        void downloadPixels(float h_pixels[]);
+        void simulate(const int &nphotonsSqrt);
+        void resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize);
+        void downloadPixels(float h_pixels[], int h_nscatt[]);
 
     protected:
         void initOptix();
@@ -63,6 +63,7 @@ class SampleSimulation
         CUDABuffer   launchParamsBuffer;
 
         CUDABuffer fluenceBuffer;
+        CUDABuffer nscattBuffer;
 
         const Model *model;
         std::vector<CUDABuffer> vertexBuffer;

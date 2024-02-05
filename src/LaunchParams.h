@@ -8,7 +8,9 @@ struct LaunchParams
 {
     struct {
       float *fluenceBuffer;
+      int *nscattBuffer;
       gdt::vec3i size;
+      gdt::vec2i nsize;
     } frame;
     OptixTraversableHandle traversable;
 };

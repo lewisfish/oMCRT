@@ -31,33 +31,6 @@ extern "C" char embedded_ptx_code[];
     int objectID;
   };
 
-
-//  void TriangleMesh::addUnitCube(const gdt::affine3f &xfm)
-//   {
-//     int firstVertexID = (int)vertex.size();
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(0.f,0.f,0.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(1.f,0.f,0.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(0.f,1.f,0.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(1.f,1.f,0.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(0.f,0.f,1.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(1.f,0.f,1.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(0.f,1.f,1.f)));
-//     vertex.push_back(xfmPoint(xfm, gdt::vec3f(1.f,1.f,1.f)));
-
-
-//     int indices[] = {0,1,3, 2,0,3,
-//                      5,7,6, 5,6,4,
-//                      0,4,5, 0,5,1,
-//                      2,3,7, 2,7,6,
-//                      1,5,7, 1,7,3,
-//                      4,0,2, 4,2,6
-//                      };
-//     for (int i=0;i<12;i++)
-//       index.push_back(firstVertexID+gdt::vec3i(indices[3*i+0],
-//                                           indices[3*i+1],
-//                                           indices[3*i+2]));
-//   }
-
 // constructor
 SampleSimulation::SampleSimulation(const Model *model) : model(model)
 {
@@ -481,7 +454,7 @@ void SampleSimulation::buildSBT()
   }
 
 
-void SampleSimulation::simulate()
+void SampleSimulation::simulate(const int &nphotonsSqrt)
 {
 
     launchParamsBuffer.upload(&launchParams,1);
@@ -493,8 +466,8 @@ void SampleSimulation::simulate()
                             launchParamsBuffer.sizeInBytes,
                             &sbt,
                             /*! dimensions of the launch: */
-                            10000,
-                            10000,
+                            nphotonsSqrt,
+                            nphotonsSqrt,
                             1
                             );
     // sync - make sure the frame is rendered before we download and
@@ -503,26 +476,30 @@ void SampleSimulation::simulate()
     // example, this will have to do)
     cudaDeviceSynchronize();
 }
-  void SampleSimulation::resize(const gdt::vec3i &newSize)
-  {
-    // if window minimized
-    if (newSize.x == 0 | newSize.y == 0) return;
 
-    // resize our cuda frame buffer
-    fluenceBuffer.resize(newSize.x*newSize.y*newSize.z*sizeof(float));
+void SampleSimulation::resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize)
+{
+
+    // resize our cuda fluence buffer
+    fluenceBuffer.resize(fluenceNewSize.x*fluenceNewSize.y*fluenceNewSize.z*sizeof(float));
+    // resize nscatt buffer
+    nscattBuffer.resize(nscattNewSize.x*nscattNewSize.y*sizeof(int));
 
     // update the launch parameters that we'll pass to the optix
     // launch:
-    launchParams.frame.size  = newSize;
+    launchParams.frame.size  = fluenceNewSize;
     launchParams.frame.fluenceBuffer = (float*)fluenceBuffer.d_pointer();
+    launchParams.frame.nsize = nscattNewSize;
+    launchParams.frame.nscattBuffer = (int*)nscattBuffer.d_pointer();
 
-    // and re-set the camera, since aspect may have changed
+}
 
-  }
+/*! download the rendered color buffer */
+void SampleSimulation::downloadPixels(float h_pixels[], int h_nscatt[])
+{
+    nscattBuffer.download(h_nscatt,
+                            launchParams.frame.nsize.x*launchParams.frame.nsize.y);
 
-    /*! download the rendered color buffer */
-    void SampleSimulation::downloadPixels(float h_pixels[])
-    {
     fluenceBuffer.download(h_pixels,
                             launchParams.frame.size.x*launchParams.frame.size.y*launchParams.frame.size.z);
-    }
+}

@@ -13,6 +13,7 @@ struct perRayData
 {
     float t;
     float weight;
+    int nscatt;
     bool alive;
 };
 
@@ -127,14 +128,15 @@ extern "C" __global__ void __raygen__simulate()
     const int iy = optixGetLaunchIndex().y;
 
     const float mus = 10.0f;
-    const float mua = 0.01f;
-    const float hgg = 0.9;
+    const float mua = 0.0f;
+    const float hgg = 0.0;
     const float g2 = hgg*hgg;
 
     // per ray data
     perRayData PRD = perRayData();
     PRD.alive = true;
     PRD.weight = 1.0f;
+    PRD.nscatt = 0;
     PRD.t = -1.0f;
 
     // for storing the payload
@@ -151,39 +153,42 @@ extern "C" __global__ void __raygen__simulate()
         optixTrace(optixLaunchParams.traversable,
         rayPos,
         rayDir,
-        0.f,      //tmin
-        1e20f,    //tmax
+        0.f,      // tmin
+        1e20f,    // tmax
         0.0f,     // rayTime
         OptixVisibilityMask( 255 ),
-        OPTIX_RAY_FLAG_DISABLE_ANYHIT,//OPTIX_RAY_FLAG_NONE,
+        OPTIX_RAY_FLAG_DISABLE_ANYHIT,// OPTIX_RAY_FLAG_NONE,
         SURFACE_RAY_TYPE,             // SBT offset
         RAY_TYPE_COUNT,               // SBT stride
         SURFACE_RAY_TYPE,             // missSBTIndex 
-        u0, u1 );                     //payload?
+        u0, u1 );                     // payload
 
         if(L > PRD.t || !PRD.alive)break;
 
         rayPos += L * rayDir;
-        rayDir = scatter(rayDir, hgg, g2, seed);
-        // rayDir = emit(seed);
-        absorb = PRD.weight*(1.f - expf(-mua * L));
-        PRD.weight -= absorb;
+        // rayDir = scatter(rayDir, hgg, g2, seed);
+        rayDir = emit(seed);
+        // absorb = PRD.weight*(1.f - expf(-mua * L));
+        // PRD.weight -= absorb;
 
-        int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
-        int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
-        int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
-        uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
-        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], absorb);
-        if(PRD.weight < THRESHOLD) 
-        {
-            if(rnd(seed) <= CHANCE)
-            {
-                PRD.weight /= CHANCE;
-            }
-        } else 
-        {
-            PRD.alive = false;
-            break;
-        }
+        // int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
+        // int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
+        // int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
+        // uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
+        // atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], absorb);
+        PRD.nscatt += 1;
+        // if(PRD.weight < THRESHOLD) 
+        // {
+        //     if(rnd(seed) <= CHANCE)
+        //     {
+        //         PRD.weight /= CHANCE;
+        //     }
+        // } else 
+        // {
+        //     PRD.alive = false;
+        //     break;
+        // }
     }
+    const uint32_t nsbIndex = ix+iy*optixLaunchParams.frame.nsize.x;
+    optixLaunchParams.frame.nscattBuffer[nsbIndex] = PRD.nscatt;
 }
