@@ -4,14 +4,18 @@
 #include "LaunchParams.h"
 #include <stdio.h>
 
+#define THRESHOLD 0.01
+#define CHANCE    0.1
 
 extern "C" __constant__ LaunchParams optixLaunchParams;
 
 struct perRayData
 {
     float t;
+    float weight;
     bool alive;
 };
+
 
 
 enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
@@ -76,9 +80,13 @@ extern "C" __global__ void __raygen__simulate()
     const int ix = optixGetLaunchIndex().x;
     const int iy = optixGetLaunchIndex().y;
 
+    const float mus = 10.0f;
+    const float mua = 0.01f;
+
     // per ray data
     perRayData PRD = perRayData();
     PRD.alive = true;
+    PRD.weight = 1.0f;
     PRD.t = -1.0f;
 
     // for storing the payload
@@ -87,11 +95,10 @@ extern "C" __global__ void __raygen__simulate()
 
     gdt::vec3f rayPos = gdt::vec3f(0.f);
     gdt::vec3f rayDir = emit(seed);
-
-
+    float absorb;
     for(;;)
     {
-        float L = -log(rnd(seed)) * 0.1f;
+        float L = -log(rnd(seed)) / mus;
 
         optixTrace(optixLaunchParams.traversable,
         rayPos,
@@ -105,14 +112,28 @@ extern "C" __global__ void __raygen__simulate()
         RAY_TYPE_COUNT,               // SBT stride
         SURFACE_RAY_TYPE,             // missSBTIndex 
         u0, u1 );                     //payload?
-        if(!PRD.alive)break;
+
+        if(L > PRD.t || !PRD.alive)break;
+
+        rayPos += L * rayDir;
+        rayDir = emit(seed);
+        absorb = PRD.weight*(1.f - expf(-mua * L));
+        PRD.weight -= absorb;
         int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
         int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
         int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
         uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
-        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], 1.f);
-        rayPos += L * rayDir;
-        rayDir = emit(seed);
-
+        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], absorb);
+        if(PRD.weight < THRESHOLD) 
+        {
+            if(rnd(seed) <= CHANCE)
+            {
+                PRD.weight /= CHANCE;
+            }
+        } else 
+        {
+            PRD.alive = false;
+            break;
+        }
     }
 }
