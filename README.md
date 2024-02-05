@@ -24,8 +24,9 @@ Actual MCRT code is contained in devicePrograms.cu
   * GDT (included)
 
 ## Todo
-  - [ ] Add absoprtion/photon weighting
-  - [ ] Add HG Phase function
+  - [x] Add absoprtion/photon weighting
+  - [x] Add HG Phase function
+  - [ ] Test current code.
   - [ ] Add per mesh optical properties
   - [ ] Add reflections/refractions
   - [ ] Add SDFs

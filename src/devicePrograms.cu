@@ -71,6 +71,52 @@ extern "C" __device__ gdt::vec3f emit(uint &seed)
     return gdt::vec3f(uxx, uyy, uzz);
 }
 
+
+extern "C" __device__ gdt::vec3f scatter(gdt::vec3f &dir, const float &hgg, const float &g2, uint &seed)
+{
+    float cost;
+
+    if(hgg == 0.0f)
+    {
+        // isotropic scattering
+        cost = 2.f * rnd(seed) - 1.f;
+    } else
+    {
+        // HG scattering
+        float temp = (1.0f - g2) / (1.0f - hgg + 2.f*hgg*rnd(seed));
+        cost = (1.0f + g2 - temp*temp) / (2.f*hgg);
+    }
+
+    float sint = sqrtf(1.f - cost*cost);
+
+    float phi = 2.f * M_PI * rnd(seed);
+    float cosp = cosf(phi);
+    float sinp;
+    if(phi < M_PI)
+    {
+        sinp = sqrtf(1.f - cosp*cosp);
+    } else
+    {
+        sinp = -sqrtf(1.f - cosp*cosp);
+    } 
+
+    float uxx, uyy, uzz;
+    if (1.0f - fabs(dir.z) <= 1e-12f) // near perpindicular
+    {
+        uxx = sint * cosp;
+        uyy = sint * sinp;
+        uzz = copysignf(cost, dir.z);
+    } else
+    {
+        float temp = sqrtf(1.f - dir.z*dir.z);
+        uxx = sint * (dir.x * dir.z * cosp - dir.y * sinp) / temp + dir.x * cost;
+        uyy = sint * (dir.y * dir.z * cosp + dir.x * sinp) / temp + dir.y * cost;
+        uzz = -1.f*sint * cosp * temp + dir.z * cost;
+    }
+
+    return gdt::vec3f(uxx, uyy, uzz);
+}
+
 extern "C" __global__ void __raygen__simulate()
 {
     const uint3 idx = optixGetLaunchIndex();
@@ -82,6 +128,8 @@ extern "C" __global__ void __raygen__simulate()
 
     const float mus = 10.0f;
     const float mua = 0.01f;
+    const float hgg = 0.9;
+    const float g2 = hgg*hgg;
 
     // per ray data
     perRayData PRD = perRayData();
@@ -116,9 +164,11 @@ extern "C" __global__ void __raygen__simulate()
         if(L > PRD.t || !PRD.alive)break;
 
         rayPos += L * rayDir;
-        rayDir = emit(seed);
+        rayDir = scatter(rayDir, hgg, g2, seed);
+        // rayDir = emit(seed);
         absorb = PRD.weight*(1.f - expf(-mua * L));
         PRD.weight -= absorb;
+
         int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
         int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
         int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
