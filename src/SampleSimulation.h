@@ -20,7 +20,7 @@
 class SampleSimulation
 {
     public:
-        SampleSimulation(const Model *model);
+        SampleSimulation(const Model *model, const std::string &rg_prog);
         void simulate(const int &nphotonsSqrt);
         void resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize);
         void downloadPixels(float h_pixels[], int h_nscatt[]);
@@ -29,7 +29,7 @@ class SampleSimulation
         void initOptix();
         void createContext();
         void createModule();
-        void createRaygenPrograms();
+        void createRaygenPrograms(const std::string &rg_prog);
         void createMissPrograms();
         void createHitGroupPrograms();
         void createPipeline();

@@ -32,7 +32,7 @@ extern "C" char embedded_ptx_code[];
   };
 
 // constructor
-SampleSimulation::SampleSimulation(const Model *model) : model(model)
+SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model)
 {
     initOptix();
 
@@ -43,7 +43,7 @@ SampleSimulation::SampleSimulation(const Model *model) : model(model)
     createModule();
 
     std::cout << "Creating raygen programs" << std::endl;
-    createRaygenPrograms();
+    createRaygenPrograms(rg_prog);
 
     launchParams.traversable = buildAccel();
 
@@ -276,7 +276,7 @@ void SampleSimulation::createModule()
     }
 }
 
-void SampleSimulation::createRaygenPrograms()
+void SampleSimulation::createRaygenPrograms(const std::string &rg_prog)
 {
     // we do a single ray gen program in this example:
     raygenPGs.resize(1);
@@ -285,7 +285,7 @@ void SampleSimulation::createRaygenPrograms()
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     pgDesc.raygen.module            = module;           
-    pgDesc.raygen.entryFunctionName = "__raygen__simulate";
+    pgDesc.raygen.entryFunctionName = rg_prog.c_str();
 
     // OptixProgramGroup raypg;
     char log[2048];

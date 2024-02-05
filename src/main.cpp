@@ -12,9 +12,10 @@ int main(int argc, char const *argv[])
 {
     // for more than one mesh make this an vector
     Model *model = loadOBJ("sphere.obj");
+    const std::string rg_program = "__raygen__simulate";
 
     int nphotonsSqrt = 10000;
-    SampleSimulation sim(model);
+    SampleSimulation sim(model, rg_program);
 
     const gdt::vec3i fbSize(gdt::vec3i(100,100, 100));
     const gdt::vec2i nsSize(gdt::vec2i(nphotonsSqrt,nphotonsSqrt));
