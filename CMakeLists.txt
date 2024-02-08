@@ -38,6 +38,19 @@ include(${gdt_dir}/cmake/configure_optix.cmake)
 include_directories(${gdt_dir})
 add_subdirectory(${gdt_dir} EXCLUDE_FROM_ALL)
 
+set(OpenGL_GL_PREFERENCE LEGACY)
+if (WIN32)
+#  set(glfw_dir ${PROJECT_SOURCE_DIR}/submodules/glfw/)
+  set(glfw_dir ${PROJECT_SOURCE_DIR}/ext/glfw/)
+  include_directories(${glfw_dir}/include)
+  add_subdirectory(${glfw_dir} EXCLUDE_FROM_ALL)
+else()
+  find_package(glfw3 REQUIRED)
+endif()
+include_directories(ext)
+add_subdirectory(ext/glfWindow EXCLUDE_FROM_ALL)
+
+
 add_subdirectory(src)
 
 set(PASSED_FIRST_CONFIGURE ON CACHE INTERNAL "Already Configured once?")

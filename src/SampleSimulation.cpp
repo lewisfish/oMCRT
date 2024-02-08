@@ -2,71 +2,17 @@
 #include <iostream>
 #include <optix_function_table_definition.h>
 
-extern "C" char embedded_ptx_code[];
-
-  /*! SBT record for a raygen program */
-  struct __align__( OPTIX_SBT_RECORD_ALIGNMENT ) RaygenRecord
-  {
-    __align__( OPTIX_SBT_RECORD_ALIGNMENT ) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
-    // just a dummy value - later examples will use more interesting
-    // data here
-    void *data;
-  };
-
- /*! SBT record for a miss program */
-  struct __align__( OPTIX_SBT_RECORD_ALIGNMENT ) MissRecord
-  {
-    __align__( OPTIX_SBT_RECORD_ALIGNMENT ) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
-    // just a dummy value - later examples will use more interesting
-    // data here
-    void *data;
-  };
-
-  /*! SBT record for a hitgroup program */
-  struct __align__( OPTIX_SBT_RECORD_ALIGNMENT ) HitgroupRecord
-  {
-    __align__( OPTIX_SBT_RECORD_ALIGNMENT ) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
-    // just a dummy value - later examples will use more interesting
-    // data here
-    int objectID;
-  };
-
 // constructor
-SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model)
+SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model), optixHandle(rg_prog)
 {
-    initOptix();
-
-    std::cout << "Creating optix context" << std::endl;
-    createContext();
-
-    std::cout << "Creating module" << std::endl;
-    createModule();
-
-    std::cout << "Creating raygen programs" << std::endl;
-    createRaygenPrograms(rg_prog);
 
     launchParams.traversable = buildAccel();
-
-    std::cout << "Creating miss programs" << std::endl;
-    createMissPrograms();
-
-    std::cout << "Creating hit group programs" << std::endl;
-    createHitGroupPrograms();
-
-    std::cout << "Creating pipeline" << std::endl;
-    createPipeline();
-
-    std::cout << "Creating BST" << std::endl;
-    buildSBT();
-
     launchParamsBuffer.alloc(sizeof(launchParams));
 
 }
 
 OptixTraversableHandle SampleSimulation::buildAccel()
 {
-    // PING;
-    // PRINT(model->meshes.size());
     
     vertexBuffer.resize(model->meshes.size());
     indexBuffer.resize(model->meshes.size());
@@ -129,7 +75,7 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     
     OptixAccelBufferSizes blasBufferSizes;
     optixAccelComputeMemoryUsage
-                (optixContext,
+                (optixHandle.optixContext,
                  &accelOptions,
                  triangleInput.data(),
                  (int)model->meshes.size(),  // num_build_inputs
@@ -157,7 +103,7 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     CUDABuffer outputBuffer;
     outputBuffer.alloc(blasBufferSizes.outputSizeInBytes);
       
-    optixAccelBuild(optixContext,
+    optixAccelBuild(optixHandle.optixContext,
                                 /* stream */0,
                                 &accelOptions,
                                 triangleInput.data(),
@@ -181,7 +127,7 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     compactedSizeBuffer.download(&compactedSize,1);
     
     asBuffer.alloc(compactedSize);
-    optixAccelCompact(optixContext,
+    optixAccelCompact(optixHandle.optixContext,
                                   /*stream:*/0,
                                   asHandle,
                                   asBuffer.d_pointer(),
@@ -199,260 +145,103 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     return asHandle;
   }
 
-void SampleSimulation::initOptix()
+
+OptixTraversableHandle SampleSimulation::buildSphereAccel()
 {
-    // check for available optix7 capable devices
-    cudaFree(0);
-    int numDevices;
-    cudaGetDeviceCount(&numDevices);
-    if (numDevices == 0)
+
+    OptixTraversableHandle asHandle;
+    CUdeviceptr            d_gas_output_buffer;
+
+    sphereVertexBuffer.resize(0);
+    sphereRadiusBuffer.resize(0);
+
+    std::vector<gdt::vec3f> sphereVertex(5);
+    std::vector<gdt::vec3f> sphereRadii(5);
+
+    for (auto i = 0; i < 5; i++)
     {
-        throw std::runtime_error("No CUDA capable devices found!");
+        sphereVertex.push_back(gdt::vec3f((float)i, 0.f, (0.f)));
+        sphereRadii.push_back(1.f);
     }
-    std::cout << "Found " << numDevices << " CUDA devices" << std::endl;
-
-    // initialize optix
-    optixInit();
-}
-
-static void context_log_cb(unsigned int level,
-                            const char *tag,
-                            const char *message,
-                            void *)
-{
-fprintf( stderr, "[%2d][%12s]: %s\n", (int)level, tag, message );
-}
-
-void SampleSimulation::createContext()
-{
-    // for this sample, do everything on one device
-    const int deviceID = 0;
-    cudaSetDevice(deviceID);
-    cudaStreamCreate(&stream);
-      
-    cudaGetDeviceProperties(&deviceProps, deviceID);
-    std::cout << "Running on device: " << deviceProps.name << std::endl;
-      
-    CUresult  cuRes = cuCtxGetCurrent(&cudaContext);
-    if( cuRes != CUDA_SUCCESS ) 
-      fprintf( stderr, "Error querying current context: error code %d\n", cuRes );
-      
-    optixDeviceContextCreate(cudaContext, 0, &optixContext);
-    optixDeviceContextSetLogCallback(optixContext, context_log_cb, nullptr, 4);
-}
-
-void SampleSimulation::createModule()
-{
-    moduleCompileOptions.maxRegisterCount  = 50;
-    moduleCompileOptions.optLevel          = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
-    moduleCompileOptions.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-
-    pipelineCompileOptions = {};
-    pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
-    pipelineCompileOptions.usesMotionBlur     = false;
-    pipelineCompileOptions.numPayloadValues   = 2;
-    pipelineCompileOptions.numAttributeValues = 2;
-    pipelineCompileOptions.exceptionFlags     = OPTIX_EXCEPTION_FLAG_NONE;
-    pipelineCompileOptions.pipelineLaunchParamsVariableName = "optixLaunchParams";
-      
-    pipelineLinkOptions.maxTraceDepth          = 2;
-      
-    const std::string ptxCode = embedded_ptx_code;
-      
-    char log[2048];
-    size_t sizeof_log = sizeof( log );
-    optixModuleCreate(optixContext,
-                                &moduleCompileOptions,
-                                &pipelineCompileOptions,
-                                ptxCode.c_str(),
-                                ptxCode.size(),
-                                log,&sizeof_log,
-                                &module
-                                );
-
-    if (sizeof_log > 1)
-    {
-        std::cout << log << std::endl;
-    }
-}
-
-void SampleSimulation::createRaygenPrograms(const std::string &rg_prog)
-{
-    // we do a single ray gen program in this example:
-    raygenPGs.resize(1);
     
-    OptixProgramGroupOptions pgOptions = {};
-    OptixProgramGroupDesc pgDesc    = {};
-    pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    pgDesc.raygen.module            = module;           
-    pgDesc.raygen.entryFunctionName = rg_prog.c_str();
+    std::vector<OptixBuildInput> sphereInput(5);
+    std::vector<CUdeviceptr> d_vertices(5);
+    std::vector<CUdeviceptr> d_radius(5);
+    std::vector<uint32_t> sphereInputFlags(5);
 
-    // OptixProgramGroup raypg;
-    char log[2048];
-    size_t sizeof_log = sizeof( log );
-    optixProgramGroupCreate(optixContext,
-                                    &pgDesc,
-                                    1,
-                                    &pgOptions,
-                                    log,&sizeof_log,
-                                    &raygenPGs[0]);
-    if (sizeof_log > 1)
-        {
-            std::cout << log << std::endl;
-        }
+    sphereVertexBuffer[0].alloc_and_upload(sphereVertex);
+    sphereRadiusBuffer[0].alloc_and_upload(sphereRadii);
+    for (int sphereID = 0; sphereID < 1; sphereID++)
+    {
+        sphereInput[sphereID] = {};
+        sphereInput[sphereID].type = OPTIX_BUILD_INPUT_TYPE_SPHERES;
+
+        d_vertices[sphereID] = sphereVertexBuffer[sphereID].d_pointer();
+        d_radius[sphereID] = sphereRadiusBuffer[sphereID].d_pointer();
+
+        sphereInput[sphereID].sphereArray.vertexBuffers = &d_vertices[sphereID];
+        sphereInput[sphereID].sphereArray.numVertices = 5;
+        sphereInput[sphereID].sphereArray.radiusBuffers = &d_radius[sphereID];
+
+        uint32_t sphereInputFlags[sphereID] = {OPTIX_GEOMETRY_FLAG_NONE};
+        sphereInput[sphereID].sphereArray.flags = sphereInputFlags;
+        sphereInput[sphereID].sphereArray.numSbtRecords = 1;
+    }
+    // BLAS setup
+    OptixAccelBufferSizes blasBufferSizes;
+    OptixAccelBuildOptions accelOptions = {};
+    accelOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
+    accelOptions.operation  = OPTIX_BUILD_OPERATION_BUILD;
+    optixAccelComputeMemoryUsage(optixHandle.optixContext, &accelOptions, sphereInput.data(), 1, &blasBufferSizes);
+
+    // Prepare compaction
+
+    CUDABuffer compactedSizeBuffer;
+    compactedSizeBuffer.alloc(sizeof(uint64_t));
+
+    OptixAccelEmitDesc emitDesc;
+    emitDesc.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
+    emitDesc.result = compactedSizeBuffer.d_pointer();
+
+    // execute build (main stage)
+
+    CUDABuffer tempBuffer;
+    tempBuffer.alloc(blasBufferSizes.tempSizeInBytes);
+
+    CUDABuffer outputBuffer;
+    outputBuffer.alloc(blasBufferSizes.outputSizeInBytes);
+
+    optixAccelBuild(optixHandle.optixContext, 0,
+                    &accelOptions, sphereInput.data(),
+                    5,
+                    tempBuffer.d_pointer(),
+                    tempBuffer.sizeInBytes,
+                    outputBuffer.d_pointer(),
+                    outputBuffer.sizeInBytes,
+                    &asHandle,
+                    &emitDesc, 1);
+    cudaDeviceSynchronize();
+
+    // perfrom compaction
+    uint64_t compactedSize;
+    compactedSizeBuffer.download(&compactedSize, 1);
+    iasBuffer.alloc(compactedSize);
+    optixAccelCompact(optixHandle.optixContext,
+                        0,
+                        asHandle,
+                        asBuffer.d_pointer(),
+                        iasBuffer.sizeInBytes,
+                        &asHandle);
+    cudaDeviceSynchronize();
+
+    //clean up
+    outputBuffer.free();
+    tempBuffer.free();
+    compactedSizeBuffer.free();
+
+    return asHandle;   
+
 }
-
- void SampleSimulation::createMissPrograms()
-  {
-    // we do a single ray gen program in this example:
-    missPGs.resize(1);
-
-    OptixProgramGroupOptions pgOptions = {};
-    OptixProgramGroupDesc pgDesc    = {};
-    pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_MISS;
-    pgDesc.miss.module            = module;
-    pgDesc.miss.entryFunctionName = "__miss__radiance";
-
-    // OptixProgramGroup raypg;
-    char log[2048];
-    size_t sizeof_log = sizeof( log );
-    optixProgramGroupCreate(optixContext,
-                                        &pgDesc,
-                                        1,
-                                        &pgOptions,
-                                        log,&sizeof_log,
-                                        &missPGs[0]
-                                        );
-    if (sizeof_log > 1) 
-    {
-      std::cout << log << std::endl;
-    }
-  }
-
-  /*! does all setup for the hitgroup program(s) we are going to use */
-  void SampleSimulation::createHitGroupPrograms()
-  {
-    // for this simple example, we set up a single hit group
-    hitgroupPGs.resize(1);
-
-    OptixProgramGroupOptions pgOptions = {};
-    OptixProgramGroupDesc pgDesc    = {};
-    pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-    pgDesc.hitgroup.moduleCH            = module;
-    pgDesc.hitgroup.entryFunctionNameCH = "__closesthit__radiance";
-    pgDesc.hitgroup.moduleAH            = module;
-    pgDesc.hitgroup.entryFunctionNameAH = "__anyhit__radiance";
-
-    char log[2048];
-    size_t sizeof_log = sizeof( log );
-    optixProgramGroupCreate(optixContext,
-                                        &pgDesc,
-                                        1,
-                                        &pgOptions,
-                                        log,&sizeof_log,
-                                        &hitgroupPGs[0]
-                                        );
-    if (sizeof_log > 1) 
-    {
-      std::cout << log << std::endl;
-    }
-  }
-
-
-void SampleSimulation::createPipeline()
-  {
-    std::vector<OptixProgramGroup> programGroups;
-    for (auto pg : raygenPGs)
-      programGroups.push_back(pg);
-    for (auto pg : missPGs)
-      programGroups.push_back(pg);
-    for (auto pg : hitgroupPGs)
-      programGroups.push_back(pg);
-
-    char log[2048];
-    size_t sizeof_log = sizeof( log );
-    optixPipelineCreate(optixContext,
-                                    &pipelineCompileOptions,
-                                    &pipelineLinkOptions,
-                                    programGroups.data(),
-                                    (int)programGroups.size(),
-                                    log,&sizeof_log,
-                                    &pipeline
-                                    );
-    if (sizeof_log > 1) PRINT(log);
-
-    optixPipelineSetStackSize
-                (/* [in] The pipeline to configure the stack size for */
-                 pipeline,
-                 /* [in] The direct stack size requirement for direct
-                    callables invoked from IS or AH. */
-                 2*1024,
-                 /* [in] The direct stack size requirement for direct
-                    callables invoked from RG, MS, or CH.  */
-                 2*1024,
-                 /* [in] The continuation stack requirement. */
-                 2*1024,
-                 /* [in] The maximum depth of a traversable graph
-                    passed to trace. */
-                 1);
-    if (sizeof_log > 1)
-    {
-        std::cout << log << std::endl;
-    }
-  }
-
-void SampleSimulation::buildSBT()
-  {
-    // ------------------------------------------------------------------
-    // build raygen records
-    // ------------------------------------------------------------------
-    std::vector<RaygenRecord> raygenRecords;
-    for (int i=0;i<raygenPGs.size();i++) {
-      RaygenRecord rec;
-      optixSbtRecordPackHeader(raygenPGs[i],&rec);
-      rec.data = nullptr; /* for now ... */
-      raygenRecords.push_back(rec);
-    }
-    raygenRecordsBuffer.alloc_and_upload(raygenRecords);
-    sbt.raygenRecord = raygenRecordsBuffer.d_pointer();
-
-    // ------------------------------------------------------------------
-    // build miss records
-    // ------------------------------------------------------------------
-    std::vector<MissRecord> missRecords;
-    for (int i=0;i<missPGs.size();i++) {
-      MissRecord rec;
-      optixSbtRecordPackHeader(missPGs[i],&rec);
-      rec.data = nullptr; /* for now ... */
-      missRecords.push_back(rec);
-    }
-    missRecordsBuffer.alloc_and_upload(missRecords);
-    sbt.missRecordBase          = missRecordsBuffer.d_pointer();
-    sbt.missRecordStrideInBytes = sizeof(MissRecord);
-    sbt.missRecordCount         = (int)missRecords.size();
-
-    // ------------------------------------------------------------------
-    // build hitgroup records
-    // ------------------------------------------------------------------
-
-    // we don't actually have any objects in this example, but let's
-    // create a dummy one so the SBT doesn't have any null pointers
-    // (which the sanity checks in compilation would complain about)
-    int numObjects = 1;
-    std::vector<HitgroupRecord> hitgroupRecords;
-    for (int i=0;i<numObjects;i++) {
-      int objectType = 0;
-      HitgroupRecord rec;
-      optixSbtRecordPackHeader(hitgroupPGs[objectType],&rec);
-      rec.objectID = i;
-      hitgroupRecords.push_back(rec);
-    }
-    hitgroupRecordsBuffer.alloc_and_upload(hitgroupRecords);
-    sbt.hitgroupRecordBase          = hitgroupRecordsBuffer.d_pointer();
-    sbt.hitgroupRecordStrideInBytes = sizeof(HitgroupRecord);
-    sbt.hitgroupRecordCount         = (int)hitgroupRecords.size();
-  }
-
 
 void SampleSimulation::simulate(const int &nphotonsSqrt)
 {
@@ -460,11 +249,11 @@ void SampleSimulation::simulate(const int &nphotonsSqrt)
     launchParamsBuffer.upload(&launchParams,1);
 
     optixLaunch(/*! pipeline we're launching launch: */
-                            pipeline,stream,
+                            optixHandle.pipeline,optixHandle.stream,
                             /*! parameters and SBT */
                             launchParamsBuffer.d_pointer(),
                             launchParamsBuffer.sizeInBytes,
-                            &sbt,
+                            &optixHandle.sbt,
                             /*! dimensions of the launch: */
                             nphotonsSqrt,
                             nphotonsSqrt,
@@ -477,7 +266,30 @@ void SampleSimulation::simulate(const int &nphotonsSqrt)
     cudaDeviceSynchronize();
 }
 
-void SampleSimulation::resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize)
+void SampleSimulation::render()
+{
+
+    launchParamsBuffer.upload(&launchParams,1);
+
+    optixLaunch(/*! pipeline we're launching launch: */
+                            optixHandle.pipeline,optixHandle.stream,
+                            /*! parameters and SBT */
+                            launchParamsBuffer.d_pointer(),
+                            launchParamsBuffer.sizeInBytes,
+                            &optixHandle.sbt,
+                            /*! dimensions of the launch: */
+                            launchParams.frame.nsize.x,
+                            launchParams.frame.nsize.y,
+                            1
+                            );
+    // sync - make sure the frame is rendered before we download and
+    // display (obviously, for a high-performance application you
+    // want to use streams and double-buffering, but for this simple
+    // example, this will have to do)
+    cudaDeviceSynchronize();
+}
+
+void SampleSimulation::resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize)
 {
 
     // resize our cuda fluence buffer
@@ -494,12 +306,50 @@ void SampleSimulation::resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i
 
 }
 
-/*! download the rendered color buffer */
-void SampleSimulation::downloadPixels(float h_pixels[], int h_nscatt[])
+void SampleSimulation::resizeCanvas(const gdt::vec2i &newSize)
+{
+
+    // resize framebuffer
+    frameBuffer.resize(newSize.x*newSize.y*sizeof(int));
+
+    // update the launch parameters that we'll pass to the optix
+    // launch:
+    launchParams.frame.nsize  = newSize;
+    launchParams.frame.frameBuffer = (uint32_t*)frameBuffer.d_pointer();
+
+}
+
+void SampleSimulation::downloadNscatt(int h_nscatt[])
 {
     nscattBuffer.download(h_nscatt,
-                            launchParams.frame.nsize.x*launchParams.frame.nsize.y);
+                          launchParams.frame.nsize.x*launchParams.frame.nsize.y);
+}
 
-    fluenceBuffer.download(h_pixels,
-                            launchParams.frame.size.x*launchParams.frame.size.y*launchParams.frame.size.z);
+/*! download the rendered color buffer */
+void SampleSimulation::downloadFluence(float h_fluence[])
+{
+    fluenceBuffer.download(h_fluence,
+                           launchParams.frame.size.x*launchParams.frame.size.y*launchParams.frame.size.z);
+}
+
+void SampleSimulation::downloadPixels(uint32_t h_pixels[])
+{
+    frameBuffer.download(h_pixels,
+                         launchParams.frame.nsize.x*launchParams.frame.nsize.y);
+
+}
+
+void SampleSimulation::setCamera(const Camera &camera)
+{
+    lastSetCamera = camera;
+    launchParams.camera.position  = camera.from;
+    launchParams.camera.direction = gdt::normalize(camera.at-camera.from);
+    const float cosFovy = 0.66f;
+    const float aspect = launchParams.frame.nsize.x / float(launchParams.frame.nsize.y);
+    launchParams.camera.horizontal
+        = cosFovy * aspect * gdt::normalize(cross(launchParams.camera.direction,
+                                            camera.up));
+    launchParams.camera.vertical
+        = cosFovy * gdt::normalize(cross(launchParams.camera.horizontal,
+                                    launchParams.camera.direction));
 }

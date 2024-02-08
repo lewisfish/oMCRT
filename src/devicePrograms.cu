@@ -2,6 +2,7 @@
 #include "gdt/math/vec.h"
 #include "random.cuh"
 #include "LaunchParams.h"
+#include "SampleSimulation.h"
 #include <stdio.h>
 
 #define THRESHOLD 0.01
@@ -15,8 +16,8 @@ struct perRayData
     float weight;
     int nscatt;
     bool alive;
+    float mus;
 };
-
 
 
 enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
@@ -46,18 +47,37 @@ enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
     }
 
 
+extern "C" __global__ void __closesthit__render()
+{
+    perRayData &prd = *(perRayData*)getPRD<perRayData>();
+    prd.t = 0.f;
+    prd.weight = 1.f;
+    prd.mus = 0.f;
+}
+
 extern "C" __global__ void __closesthit__radiance()
 {
     const float t = optixGetRayTmax();
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
     prd.t = t;
+    const trianglemeshSBTdata &hg_data =  *(const trianglemeshSBTdata*)(optixGetSbtDataPointer());
+    prd.mus = hg_data.mus;
+    
 }
 extern "C" __global__ void __anyhit__radiance()
-{}
+{
+    // perRayData &prd = *(perRayData*)getPRD<perRayData>();
+    // prd.count++;
+    // optixIgnoreIntersection();
+
+}
 extern "C" __global__ void __miss__radiance()
 {
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
     prd.alive = false;
+    prd.weight = 1.f;
+    prd.t = 1.f;
+    prd.mus = 1.f;
 }
 
 extern "C" __device__ gdt::vec3f emit(uint &seed)
@@ -120,17 +140,16 @@ extern "C" __device__ gdt::vec3f scatter(gdt::vec3f &dir, const float &hgg, cons
 
 extern "C" __global__ void __raygen__weight()
 {
-        const uint3 idx = optixGetLaunchIndex();
-    const uint3 dim = optixGetLaunchDimensions();
-    uint seed = tea<64>(dim.x * idx.y + idx.x, 0);
-
     const int ix = optixGetLaunchIndex().x;
     const int iy = optixGetLaunchIndex().y;
+    const uint3 dim = optixGetLaunchDimensions();
+    uint seed = tea<64>(dim.x * iy + ix, 0);
 
-    const float mus = 10.0f;
-    const float mua = 0.0f;
-    const float hgg = 0.0;
-    const float g2 = hgg*hgg;
+
+    float mus; //= 10.0f;
+    float mua; //= 0.0f;
+    float hgg; //= 0.0;
+    float g2; //= hgg*hgg;
 
     // per ray data
     perRayData PRD = perRayData();
@@ -148,7 +167,6 @@ extern "C" __global__ void __raygen__weight()
     float absorb;
     for(;;)
     {
-        float L = -log(rnd(seed)) / mus;
 
         optixTrace(optixLaunchParams.traversable,
         rayPos,
@@ -163,6 +181,13 @@ extern "C" __global__ void __raygen__weight()
         SURFACE_RAY_TYPE,             // missSBTIndex 
         u0, u1 );                     // payload
 
+        // mus = PRD.mat.mus;
+        // mua = PRD.mat.mua;
+        // hgg = PRD.mat.hgg;
+        // g2 = PRD.mat.g2;
+
+
+        float L = -log(rnd(seed)) / mus;
         if(L > PRD.t || !PRD.alive)break;
 
         rayPos += L * rayDir;
@@ -201,10 +226,10 @@ extern "C" __global__ void __raygen__simulate()
     const int ix = optixGetLaunchIndex().x;
     const int iy = optixGetLaunchIndex().y;
 
-    const float mus = 10.0f;
-    const float mua = 0.0f;
-    const float hgg = 0.0;
-    const float g2 = hgg*hgg;
+    float mus; //= 10.0f;
+    // float mua; //= 0.0f;
+    // float hgg; //= 0.0;
+    // float g2; //= hgg*hgg;
 
     // per ray data
     perRayData PRD = perRayData();
@@ -219,11 +244,9 @@ extern "C" __global__ void __raygen__simulate()
 
     gdt::vec3f rayPos = gdt::vec3f(0.f);
     gdt::vec3f rayDir = emit(seed);
-    float absorb;
+
     for(;;)
     {
-        float L = -log(rnd(seed)) / mus;
-
         optixTrace(optixLaunchParams.traversable,
         rayPos,
         rayDir,
@@ -237,6 +260,12 @@ extern "C" __global__ void __raygen__simulate()
         SURFACE_RAY_TYPE,             // missSBTIndex 
         u0, u1 );                     // payload
 
+        mus = PRD.mus;
+        // mua = PRD.mua;
+        // hgg = PRD.hgg;
+        // g2 = PRD.g2;
+
+        float L = -log(rnd(seed)) / mus;
         if(L > PRD.t || !PRD.alive)break;
 
         rayPos += L * rayDir;
@@ -245,4 +274,58 @@ extern "C" __global__ void __raygen__simulate()
     }
     const uint32_t nsbIndex = ix+iy*optixLaunchParams.frame.nsize.x;
     optixLaunchParams.frame.nscattBuffer[nsbIndex] = PRD.nscatt;
+}
+
+extern "C" __global__ void __raygen__camera()
+{
+
+    const int ix = optixGetLaunchIndex().x;
+    const int iy = optixGetLaunchIndex().y;
+
+    const auto &camera = optixLaunchParams.camera;
+
+    perRayData PRD = perRayData();
+    PRD.weight = .0f;
+    PRD.mus = 0.f;
+    PRD.t = .0f;
+
+    // for storing the payload
+    uint32_t u0, u1;
+    packPointer(&PRD, u0, u1);
+
+    const gdt::vec2f screen(gdt::vec2f(ix+.5f, iy+.5f) / 
+         gdt::vec2f(optixLaunchParams.frame.nsize.x, optixLaunchParams.frame.nsize.y));
+
+    gdt::vec3f rayDir = gdt::normalize(camera.direction + 
+                                       (screen.x - 0.5f) * camera.horizontal
+                                      +(screen.y - 0.5f) * camera.vertical);
+
+    // printf("%f %f %f\n", rayDir.x, rayDir.y, rayDir.z);
+
+    optixTrace(optixLaunchParams.traversable,
+                camera.position,
+                rayDir,
+                0.f,
+                1e20f,
+                0.0f,
+                OptixVisibilityMask(255),
+                OPTIX_RAY_FLAG_DISABLE_ANYHIT,
+                SURFACE_RAY_TYPE,
+                RAY_TYPE_COUNT,
+                SURFACE_RAY_TYPE,
+                u0, u1);
+
+    const int r = int(255.99f*PRD.weight);
+    const int g = int(255.99f*PRD.t);
+    const int b = int(255.99f*PRD.mus);
+
+    // convert to 32-bit rgba value (we explicitly set alpha to 0xff
+    // to make stb_image_write happy ...
+    const uint32_t rgba = 0xff000000
+      | (r<<0) | (g<<8) | (b<<16);
+
+    // and write to frame buffer ...
+    const uint32_t fbIndex = ix+iy*optixLaunchParams.frame.nsize.x;
+    optixLaunchParams.frame.frameBuffer[fbIndex] = rgba;
+   
 }

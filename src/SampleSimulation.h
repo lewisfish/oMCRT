@@ -8,67 +8,53 @@
 #include "gdt/math/vec.h"
 #include "CUDABuffer.h"
 #include "model.h"
+#include "optixclass.h"
 
-// struct TriangleMesh
-// {
-    // void addUnitCube(const gdt::affine3f &xfm);
-
-//     std::vector<gdt::vec3f> vertex;
-//     std::vector<gdt::vec3i> index;
-// };
+struct Camera {
+    /*! camera position - *from* where we are looking */
+    gdt::vec3f from;
+    /*! which point we are looking *at* */
+    gdt::vec3f at;
+    /*! general up-vector */
+    gdt::vec3f up;
+  };
 
 class SampleSimulation
 {
     public:
         SampleSimulation(const Model *model, const std::string &rg_prog);
         void simulate(const int &nphotonsSqrt);
-        void resize(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize);
-        void downloadPixels(float h_pixels[], int h_nscatt[]);
+        void render();
+        void resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize);
+        void resizeCanvas(const gdt::vec2i &newSize);
+        void downloadFluence(float h_fluence[]);
+        void downloadNscatt(int h_nscatt[]);
+        void downloadPixels(uint32_t h_pixels[]);
+        void setCamera(const Camera &camera);
 
     protected:
-        void initOptix();
-        void createContext();
-        void createModule();
-        void createRaygenPrograms(const std::string &rg_prog);
-        void createMissPrograms();
-        void createHitGroupPrograms();
-        void createPipeline();
-        void buildSBT();
-
         OptixTraversableHandle buildAccel();
-    
-    protected:
-        CUcontext cudaContext;
-        CUstream stream;
-        cudaDeviceProp deviceProps;
+        OptixTraversableHandle buildSphereAccel();
 
-        OptixDeviceContext optixContext;
-
-        OptixPipeline               pipeline;
-        OptixPipelineCompileOptions pipelineCompileOptions = {};
-        OptixPipelineLinkOptions    pipelineLinkOptions    = {};
-
-        OptixModule                 module;
-        OptixModuleCompileOptions   moduleCompileOptions = {};
-
-        std::vector<OptixProgramGroup> raygenPGs;
-        CUDABuffer raygenRecordsBuffer;
-        std::vector<OptixProgramGroup> missPGs;
-        CUDABuffer missRecordsBuffer;
-        std::vector<OptixProgramGroup> hitgroupPGs;
-        CUDABuffer hitgroupRecordsBuffer;
-        OptixShaderBindingTable sbt = {};
+        OptixClass optixHandle;
 
         LaunchParams launchParams;
         CUDABuffer   launchParamsBuffer;
 
+        CUDABuffer frameBuffer;
         CUDABuffer fluenceBuffer;
         CUDABuffer nscattBuffer;
+
+        Camera lastSetCamera;
 
         const Model *model;
         std::vector<CUDABuffer> vertexBuffer;
         std::vector<CUDABuffer> indexBuffer;
         //! buffer that keeps the (final, compacted) accel structure
         CUDABuffer asBuffer;
+
+        std::vector<CUDABuffer> sphereVertexBuffer;
+        std::vector<CUDABuffer> sphereRadiusBuffer;
+        CUDABuffer iasBuffer;
 
 };
