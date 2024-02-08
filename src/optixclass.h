@@ -6,8 +6,6 @@
 
 #include "CUDABuffer.h"
 
-extern "C" char embedded_ptx_code[];
-
 template <typename T>
 struct SbtRecord
 {
@@ -34,17 +32,18 @@ typedef SbtRecord<HitGroupData>   HitgroupRecord;
 class OptixClass
 {
 public:
-    OptixClass(const std::string &rg_prog);
+    OptixClass(const std::string &rg_prog, const std::string &progSuffix);
     OptixClass() = delete;
 protected:
     void initOptix();
     void createContext();
     void createModule();
     void createRaygenPrograms(const std::string &rg_prog);
-    void createMissPrograms();
-    void createHitGroupPrograms();
+    void createMissPrograms(const std::string &progSuffix);
+    void createHitGroupPrograms(const std::string &progSuffix);
     void createPipeline();
     void buildSBT();
+    std::vector<char> readData(std::string const& filename);
 
     OptixTraversableHandle buildAccel();
 

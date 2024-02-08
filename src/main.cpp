@@ -4,6 +4,7 @@
 #include <string>
 
 #include "SampleSimulation.h"
+#include "render.h"
 #include "gdt/math/vec.h"
 #include "io.hpp"
 #include <GL/gl.h>
@@ -16,7 +17,7 @@ struct SampleWindow : public GLFCameraWindow
                  const Camera &camera,
                  const float worldScale)
       : GLFCameraWindow(title,camera.from,camera.at,camera.up,worldScale),
-        sample(model, "__raygen__camera")
+        sample(model)
     {
       sample.setCamera(camera);
     }
@@ -83,13 +84,13 @@ virtual void draw() override
     virtual void resize(const gdt::vec2i &newSize) 
     {
       fbSize = newSize;
-      sample.resizeCanvas(newSize);
+      sample.resize(newSize);
       pixels.resize(newSize.x*newSize.y);
     }
 
     gdt::vec2i            fbSize;
     GLuint                fbTexture {0};
-    SampleSimulation      sample;
+    Renderer              sample;
     std::vector<uint32_t> pixels;
   };
 

@@ -1,16 +1,24 @@
 #include <iostream>
+#include <fstream>
+#include <sstream>
+
 
 #include "optixclass.h"
 #include "optix_helpers.h"
 
-OptixClass::OptixClass(const std::string &rg_prog)
+OptixClass::OptixClass(const std::string &rg_prog, const std::string &progSuffix)
 {
+
     initOptix();
     createContext();
     createModule();
     createRaygenPrograms(rg_prog);
-    createMissPrograms();
-    createHitGroupPrograms();
+    std::string name = "__miss__";
+    name += progSuffix;
+    createMissPrograms(name);
+    name = "__closesthit__";
+    name += progSuffix;
+    createHitGroupPrograms(name);
     createPipeline();
     buildSBT();
 }
@@ -48,6 +56,28 @@ void OptixClass::createContext()
     OPTIX_CHECK(optixDeviceContextSetLogCallback(optixContext, context_log_cb, nullptr, 4));
 }
 
+std::vector<char> OptixClass::readData(std::string const& filename)
+{
+  std::ifstream inputData(filename, std::ios::binary);
+
+  if (inputData.fail())
+  {
+    std::cerr << "ERROR: readData() Failed to open file " << filename << '\n';
+    return std::vector<char>();
+  }
+
+  // Copy the input buffer to a char vector.
+  std::vector<char> data(std::istreambuf_iterator<char>(inputData), {});
+
+  if (inputData.fail())
+  {
+    std::cerr << "ERROR: readData() Failed to read file " << filename << '\n';
+    return std::vector<char>();
+  }
+
+  return data;
+}
+
 void OptixClass::createModule()
 {
 
@@ -65,15 +95,18 @@ void OptixClass::createModule()
       
     pipelineLinkOptions.maxTraceDepth          = 2;
       
-    const std::string ptxCode = embedded_ptx_code;
-      
+    std::string ptxCode_sim = "/home/lewis/postdoc/optix/mcrt/bin/oMCRT/rendererPrograms.optixir";
+
+    std::vector<char> programData = readData(ptxCode_sim);
+
     char log[2048];
     size_t sizeof_log = sizeof( log );
+      
     OPTIX_CHECK(optixModuleCreate(optixContext,
                                 &moduleCompileOptions,
                                 &pipelineCompileOptions,
-                                ptxCode.c_str(),
-                                ptxCode.size(),
+                                programData.data(),
+                                programData.size(),
                                 log,&sizeof_log,
                                 &module
                                 ));
@@ -89,7 +122,7 @@ void OptixClass::createRaygenPrograms(const std::string &rg_prog)
     OptixProgramGroupOptions pgOptions = {};
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    pgDesc.raygen.module            = module;           
+    pgDesc.raygen.module            = module;   
     pgDesc.raygen.entryFunctionName = rg_prog.c_str();
 
     // OptixProgramGroup raypg;
@@ -104,7 +137,7 @@ void OptixClass::createRaygenPrograms(const std::string &rg_prog)
     if (sizeof_log > 1)std::cout << log << std::endl;
 }
 
-void OptixClass::createMissPrograms()
+void OptixClass::createMissPrograms(const std::string &progSuffix)
 {
     // we do a single ray gen program in this example:
     missPGs.resize(1);
@@ -113,7 +146,7 @@ void OptixClass::createMissPrograms()
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_MISS;
     pgDesc.miss.module            = module;
-    pgDesc.miss.entryFunctionName = "__miss__radiance";
+    pgDesc.miss.entryFunctionName = progSuffix.c_str();
 
     // OptixProgramGroup raypg;
     char log[2048];
@@ -128,7 +161,7 @@ void OptixClass::createMissPrograms()
     if (sizeof_log > 1)std::cout << log << std::endl;
 }
 
-void OptixClass::createHitGroupPrograms()
+void OptixClass::createHitGroupPrograms(const std::string &progSuffix)
 {
     // for this simple example, we set up a single hit group
     hitgroupPGs.resize(1);
@@ -136,10 +169,11 @@ void OptixClass::createHitGroupPrograms()
     OptixProgramGroupOptions pgOptions = {};
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+    
     pgDesc.hitgroup.moduleCH            = module;
-    pgDesc.hitgroup.entryFunctionNameCH = "__closesthit__render";
+    pgDesc.hitgroup.entryFunctionNameCH = progSuffix.c_str();//"__closesthit__render";
     pgDesc.hitgroup.moduleAH            = module;
-    pgDesc.hitgroup.entryFunctionNameAH = "__anyhit__radiance";
+    pgDesc.hitgroup.entryFunctionNameAH = "__anyhit__render";
 
     char log[2048];
     size_t sizeof_log = sizeof( log );

@@ -14,13 +14,10 @@ struct trianglemeshSBTdata{
     float n;
 };
 
-struct LaunchParams
+struct RendererLaunchParams
 {
     struct {
-        float *fluenceBuffer;
         uint32_t *frameBuffer;
-        int *nscattBuffer;
-        gdt::vec3i size;
         gdt::vec2i nsize;
     } frame;
 
@@ -31,5 +28,16 @@ struct LaunchParams
       gdt::vec3f vertical;
     } camera;
 
+    OptixTraversableHandle traversable;
+};
+
+struct SimulationLaunchParams
+{
+    struct {
+        float *fluenceBuffer;
+        int   *nscattBuffer;
+        gdt::vec3i size;
+        gdt::vec2i nsize;
+    } frame;
     OptixTraversableHandle traversable;
 };

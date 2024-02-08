@@ -1,15 +1,69 @@
-#include "SampleSimulation.h"
-#include <iostream>
-#include <optix_function_table_definition.h>
+#include "render.h"
 
-// constructor
-SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model), optixHandle(rg_prog, "simulation")
+Renderer::Renderer(const Model *model) : model(model), optixHandle("__raygen__camera", "render")
 {
     launchParams.traversable = buildAccel();
     launchParamsBuffer.alloc(sizeof(launchParams));
 }
 
-OptixTraversableHandle SampleSimulation::buildAccel()
+void Renderer::render()
+{
+
+    launchParamsBuffer.upload(&launchParams,1);
+
+    optixLaunch(/*! pipeline we're launching launch: */
+                            optixHandle.pipeline,optixHandle.stream,
+                            /*! parameters and SBT */
+                            launchParamsBuffer.d_pointer(),
+                            launchParamsBuffer.sizeInBytes,
+                            &optixHandle.sbt,
+                            /*! dimensions of the launch: */
+                            launchParams.frame.nsize.x,
+                            launchParams.frame.nsize.y,
+                            1
+                            );
+    // sync - make sure the frame is rendered before we download and
+    // display (obviously, for a high-performance application you
+    // want to use streams and double-buffering, but for this simple
+    // example, this will have to do)
+    cudaDeviceSynchronize();
+}
+
+void Renderer::resize(const gdt::vec2i &newSize)
+{
+
+    // resize framebuffer
+    frameBuffer.resize(newSize.x*newSize.y*sizeof(int));
+
+    // update the launch parameters that we'll pass to the optix
+    // launch:
+    launchParams.frame.nsize  = newSize;
+    launchParams.frame.frameBuffer = (uint32_t*)frameBuffer.d_pointer();
+
+}
+
+void Renderer::downloadPixels(uint32_t h_pixels[])
+{
+    frameBuffer.download(h_pixels,
+                         launchParams.frame.nsize.x*launchParams.frame.nsize.y);
+
+}
+
+void Renderer::setCamera(const Camera &camera)
+{
+    lastSetCamera = camera;
+    launchParams.camera.position  = camera.from;
+    launchParams.camera.direction = gdt::normalize(camera.at-camera.from);
+    const float cosFovy = 0.66f;
+    const float aspect = launchParams.frame.nsize.x / float(launchParams.frame.nsize.y);
+    launchParams.camera.horizontal
+        = cosFovy * aspect * gdt::normalize(cross(launchParams.camera.direction,
+                                            camera.up));
+    launchParams.camera.vertical
+        = cosFovy * gdt::normalize(cross(launchParams.camera.horizontal,
+                                    launchParams.camera.direction));
+}
+OptixTraversableHandle Renderer::buildAccel()
 {
     
     vertexBuffer.resize(model->meshes.size());
@@ -142,157 +196,3 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     
     return asHandle;
   }
-
-
-OptixTraversableHandle SampleSimulation::buildSphereAccel()
-{
-
-    OptixTraversableHandle asHandle;
-    CUdeviceptr            d_gas_output_buffer;
-
-    sphereVertexBuffer.resize(0);
-    sphereRadiusBuffer.resize(0);
-
-    std::vector<gdt::vec3f> sphereVertex(5);
-    std::vector<gdt::vec3f> sphereRadii(5);
-
-    for (auto i = 0; i < 5; i++)
-    {
-        sphereVertex.push_back(gdt::vec3f((float)i, 0.f, (0.f)));
-        sphereRadii.push_back(1.f);
-    }
-    
-    std::vector<OptixBuildInput> sphereInput(5);
-    std::vector<CUdeviceptr> d_vertices(5);
-    std::vector<CUdeviceptr> d_radius(5);
-    std::vector<uint32_t> sphereInputFlags(5);
-
-    sphereVertexBuffer[0].alloc_and_upload(sphereVertex);
-    sphereRadiusBuffer[0].alloc_and_upload(sphereRadii);
-    for (int sphereID = 0; sphereID < 1; sphereID++)
-    {
-        sphereInput[sphereID] = {};
-        sphereInput[sphereID].type = OPTIX_BUILD_INPUT_TYPE_SPHERES;
-
-        d_vertices[sphereID] = sphereVertexBuffer[sphereID].d_pointer();
-        d_radius[sphereID] = sphereRadiusBuffer[sphereID].d_pointer();
-
-        sphereInput[sphereID].sphereArray.vertexBuffers = &d_vertices[sphereID];
-        sphereInput[sphereID].sphereArray.numVertices = 5;
-        sphereInput[sphereID].sphereArray.radiusBuffers = &d_radius[sphereID];
-
-        uint32_t sphereInputFlags[sphereID] = {OPTIX_GEOMETRY_FLAG_NONE};
-        sphereInput[sphereID].sphereArray.flags = sphereInputFlags;
-        sphereInput[sphereID].sphereArray.numSbtRecords = 1;
-    }
-    // BLAS setup
-    OptixAccelBufferSizes blasBufferSizes;
-    OptixAccelBuildOptions accelOptions = {};
-    accelOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
-    accelOptions.operation  = OPTIX_BUILD_OPERATION_BUILD;
-    optixAccelComputeMemoryUsage(optixHandle.optixContext, &accelOptions, sphereInput.data(), 1, &blasBufferSizes);
-
-    // Prepare compaction
-
-    CUDABuffer compactedSizeBuffer;
-    compactedSizeBuffer.alloc(sizeof(uint64_t));
-
-    OptixAccelEmitDesc emitDesc;
-    emitDesc.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-    emitDesc.result = compactedSizeBuffer.d_pointer();
-
-    // execute build (main stage)
-
-    CUDABuffer tempBuffer;
-    tempBuffer.alloc(blasBufferSizes.tempSizeInBytes);
-
-    CUDABuffer outputBuffer;
-    outputBuffer.alloc(blasBufferSizes.outputSizeInBytes);
-
-    optixAccelBuild(optixHandle.optixContext, 0,
-                    &accelOptions, sphereInput.data(),
-                    5,
-                    tempBuffer.d_pointer(),
-                    tempBuffer.sizeInBytes,
-                    outputBuffer.d_pointer(),
-                    outputBuffer.sizeInBytes,
-                    &asHandle,
-                    &emitDesc, 1);
-    cudaDeviceSynchronize();
-
-    // perfrom compaction
-    uint64_t compactedSize;
-    compactedSizeBuffer.download(&compactedSize, 1);
-    iasBuffer.alloc(compactedSize);
-    optixAccelCompact(optixHandle.optixContext,
-                        0,
-                        asHandle,
-                        asBuffer.d_pointer(),
-                        iasBuffer.sizeInBytes,
-                        &asHandle);
-    cudaDeviceSynchronize();
-
-    //clean up
-    outputBuffer.free();
-    tempBuffer.free();
-    compactedSizeBuffer.free();
-
-    return asHandle;   
-
-}
-
-void SampleSimulation::simulate(const int &nphotonsSqrt)
-{
-
-    launchParamsBuffer.upload(&launchParams,1);
-
-    optixLaunch(/*! pipeline we're launching launch: */
-                            optixHandle.pipeline,optixHandle.stream,
-                            /*! parameters and SBT */
-                            launchParamsBuffer.d_pointer(),
-                            launchParamsBuffer.sizeInBytes,
-                            &optixHandle.sbt,
-                            /*! dimensions of the launch: */
-                            nphotonsSqrt,
-                            nphotonsSqrt,
-                            1
-                            );
-    // sync - make sure the frame is rendered before we download and
-    // display (obviously, for a high-performance application you
-    // want to use streams and double-buffering, but for this simple
-    // example, this will have to do)
-    cudaDeviceSynchronize();
-}
-
-
-void SampleSimulation::resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize)
-{
-
-    // resize our cuda fluence buffer
-    fluenceBuffer.resize(fluenceNewSize.x*fluenceNewSize.y*fluenceNewSize.z*sizeof(float));
-    // resize nscatt buffer
-    nscattBuffer.resize(nscattNewSize.x*nscattNewSize.y*sizeof(int));
-
-    // update the launch parameters that we'll pass to the optix
-    // launch:
-    launchParams.frame.size  = fluenceNewSize;
-    launchParams.frame.fluenceBuffer = (float*)fluenceBuffer.d_pointer();
-    launchParams.frame.nsize = nscattNewSize;
-    launchParams.frame.nscattBuffer = (int*)nscattBuffer.d_pointer();
-
-}
-
-
-
-void SampleSimulation::downloadNscatt(int h_nscatt[])
-{
-    nscattBuffer.download(h_nscatt,
-                          launchParams.frame.nsize.x*launchParams.frame.nsize.y);
-}
-
-/*! download the rendered color buffer */
-void SampleSimulation::downloadFluence(float h_fluence[])
-{
-    fluenceBuffer.download(h_fluence,
-                           launchParams.frame.size.x*launchParams.frame.size.y*launchParams.frame.size.z);
-}
