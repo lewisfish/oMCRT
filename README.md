@@ -7,7 +7,9 @@ The photon packets then traverse a mesh of triangles and upon exit of the mesh a
 The medium has an albedo of unity and scattering coefficient of $10cm^{-1}$.
 
 Optix scaffolding code is based upon Ingo Wald's [Optix 7 course](https://github.com/ingowald/optix7course) in particular example's 4 and 7.
-Actual MCRT code is contained in devicePrograms.cu
+Actual MCRT code is contained in simulationPrograms.cu
+
+Code also contains a basic renderer for viewing the meshes. Renderer shows the mesh with a solid colour and wireframe.
 
 ## Performance
 
@@ -17,10 +19,12 @@ Actual MCRT code is contained in devicePrograms.cu
   * [Happy Buddha](https://casual-effects.com/data/): ~240 MPhotons/s
 
 ## Screenshots
-
-  [Budda](media/buddha.png)
-  [Spot](media/spot.png)
-  [Nefertiti bust](media/nefertiti.png)
+  #### Buddha model
+  ![Budda](media/buddha.png)
+  #### Spot model
+  ![Spot](media/spot.png)
+  #### Nefertiti bust
+  ![Nefertiti bust](media/nefertiti.png)
 
 ## Dependencies
   * c++ compiler
