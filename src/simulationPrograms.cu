@@ -258,6 +258,12 @@ extern "C" __global__ void __raygen__simulate()
 
         rayPos += L * rayDir;
         rayDir = emit(seed);
+        int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
+        int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
+        int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
+        uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
+        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], 1.f);
+
         PRD.nscatt += 1;
     }
     const uint32_t nsbIndex = ix+iy*optixLaunchParams.frame.nsize.x;

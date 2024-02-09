@@ -16,6 +16,12 @@ Actual MCRT code is contained in devicePrograms.cu
   * [Standford Bunny](https://casual-effects.com/data/): ~220 MPhotons/s
   * [Happy Buddha](https://casual-effects.com/data/): ~240 MPhotons/s
 
+## Screenshots
+
+  [Budda](media/buddha.png)
+  [Spot](media/spot.png)
+  [Nefertiti bust](media/nefertiti.png)
+
 ## Dependencies
   * c++ compiler
   * Nvidia hpc SDK
