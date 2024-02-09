@@ -5,8 +5,9 @@
 #include "SampleSimulation.h"
 #include <stdio.h>
 
-#define THRESHOLD 0.01
-#define CHANCE    0.1
+#define THRESHOLD 0.01f
+#define CHANCE    0.1f
+#define PI 3.141593f
 
 extern "C" __constant__ SimulationLaunchParams optixLaunchParams;
 
@@ -71,7 +72,7 @@ extern "C" __global__ void __miss__simulation()
 extern "C" __device__ gdt::vec3f emit(uint &seed)
 {
     float uxx, uyy, uzz;
-    float phi = 2.f * M_PI * rnd(seed);
+    float phi = 2.f * PI * rnd(seed);
     float cost = 2.f * rnd(seed) - 1.f;
     float sint = sqrtf(1.f - cost * cost);
     uxx = sint * cosf(phi);
@@ -98,10 +99,10 @@ extern "C" __device__ gdt::vec3f scatter(gdt::vec3f &dir, const float &hgg, cons
 
     float sint = sqrtf(1.f - cost*cost);
 
-    float phi = 2.f * M_PI * rnd(seed);
+    float phi = 2.f * PI * rnd(seed);
     float cosp = cosf(phi);
     float sinp;
-    if(phi < M_PI)
+    if(phi < PI)
     {
         sinp = sqrtf(1.f - cosp*cosp);
     } else
@@ -124,6 +125,15 @@ extern "C" __device__ gdt::vec3f scatter(gdt::vec3f &dir, const float &hgg, cons
     }
 
     return gdt::vec3f(uxx, uyy, uzz);
+}
+
+extern "C" __device__ uint32_t getVoxel(const gdt::vec3f &pos)
+{   
+    gdt::vec3i size = optixLaunchParams.frame.size;
+    int celli = max(min((int)floorf(size.x * (pos.x + 1.5f) / (3.0f)), size.x), 0);
+    int cellj = max(min((int)floorf(size.y * (pos.y + 1.5f) / (3.0f)), size.y), 0);
+    int cellk = max(min((int)floorf(size.z * (pos.z + 1.5f) / (3.0f)), size.z), 0);
+    return cellk*size.x*size.y + cellj*size.y+celli;
 }
 
 extern "C" __global__ void __raygen__weight()
@@ -183,10 +193,7 @@ extern "C" __global__ void __raygen__weight()
         absorb = PRD.weight*(1.f - expf(-mua * L));
         PRD.weight -= absorb;
 
-        int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
-        int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
-        int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
-        uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
+        uint32_t fbIndex = getVoxel(rayPos);
         atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], absorb);
         PRD.nscatt += 1;
         if(PRD.weight < THRESHOLD) 
@@ -249,19 +256,14 @@ extern "C" __global__ void __raygen__simulate()
         u0, u1 );                     // payload
 
         mus = PRD.mus;
-        // mua = PRD.mua;
-        // hgg = PRD.hgg;
-        // g2 = PRD.g2;
 
         float L = -log(rnd(seed)) / mus;
         if(L > PRD.t || !PRD.alive)break;
 
         rayPos += L * rayDir;
         rayDir = emit(seed);
-        int celli = max(min((int)floorf(100 * (rayPos.x + 1.5f) / (3.0f)), 100), 0);
-        int cellj = max(min((int)floorf(100 * (rayPos.y + 1.5f) / (3.0f)), 100), 0);
-        int cellk = max(min((int)floorf(100 * (rayPos.z + 1.5f) / (3.0f)), 100), 0);
-        uint32_t fbIndex = celli*100*100 + cellj*100+cellk;
+
+        uint32_t fbIndex = getVoxel(rayPos);
         atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], 1.f);
 
         PRD.nscatt += 1;
