@@ -1,5 +1,5 @@
 #pragma once
 #include <vector>
 
-void writeNRRD(std::vector<float> &grid);
+void writeNRRD(const std::string & fileName, const gdt::vec3i &size, std::vector<float> &grid);
 

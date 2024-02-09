@@ -89,7 +89,14 @@ int main(int argc, char** argv)
 
         sim.downloadFluence(fluence.data());
         sim.downloadNscatt(nscatts.data());
-        writeNRRD(fluence);
+
+        // remove folder and file extension
+        size_t lastIndex = model_file.find_first_of(".");
+        std::string outName = model_file.substr(0, lastIndex);
+        size_t firstIndex = outName.find_first_of("/");
+        outName = outName.substr(firstIndex+1);
+        // write out nrrd file
+        writeNRRD(outName + ".nrrd", fbSize, fluence);
 
         long int total = 0;
         for (auto i : nscatts)
