@@ -262,7 +262,7 @@ void OptixClass::buildSBT()
     // we don't actually have any objects in this example, but let's
     // create a dummy one so the SBT doesn't have any null pointers
     // (which the sanity checks in compilation would complain about)
-    int numObjects = 1;
+    int numObjects = 3;
     std::vector<HitgroupRecord> hitgroupRecords;
     for (int i=0;i<numObjects;i++) {
         int objectType = 0;
@@ -275,6 +275,7 @@ void OptixClass::buildSBT()
         rec.data.g2     = 0.f;
         rec.data.kappa  = 10.f;
         rec.data.albedo = 1.f;
+        rec.data.objectID = i;
 
         hitgroupRecords.push_back(rec);
     }

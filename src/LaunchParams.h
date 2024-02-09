@@ -4,16 +4,6 @@
 #include <optix_stubs.h>
 #include "gdt/math/vec.h"
 
-struct trianglemeshSBTdata{
-    float mus;
-    float mua;
-    float hgg;
-    float g2;
-    float albedo;
-    float kappa;
-    float n;
-};
-
 struct RendererLaunchParams
 {
     struct {
@@ -40,4 +30,7 @@ struct SimulationLaunchParams
         gdt::vec2i nsize;
     } frame;
     OptixTraversableHandle traversable;
+    struct {
+        float mus[3];
+    }optProps;
 };

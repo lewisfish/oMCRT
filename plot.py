@@ -1,3 +1,4 @@
+import argparse
 from collections import OrderedDict
 import os
 import re
@@ -5,8 +6,6 @@ import re
 import pyvista as pv
 import numpy as np
 import vtk
-# from skimage.measure import marching_cubes
-
 
 _types = {"float": np.float32, "double": np.float64,
           "int32": np.int32, "int64": np.int64,
@@ -63,9 +62,8 @@ def _get_value_type(key, value):
     elif key in ["sizes"]:
         return [int(x) for x in value.split()]
     else:
+        # ignore other metadata
         pass
-        # raise NotImplementedError
-
 
 def read_data(file, header):
 
@@ -79,22 +77,26 @@ def read_data(file, header):
     data = data.reshape((size))
     return data
 
+parser = argparse.ArgumentParser(prog="plot")
+parser.add_argument("-f", "--file", type=str)
+
+args = parser.parse_args()
+filename = args.file
 plotter = pv.Plotter()
 
-
-mesh = pv.read("models/sphere.obj")
+mesh = pv.read("models/" + filename + ".obj")
 plotter.add_mesh(mesh, style='wireframe', opacity=.1)
 
-voxels, hdr = read_nrrd("sphere.nrrd")
+voxels, hdr = read_nrrd(filename + ".nrrd")
 grid = pv.UniformGrid()
 grid.dimensions = np.array(voxels.shape) + 1
-grid.spacing = (0.03, 0.03, 0.03)
+grid.spacing = (3./voxels.shape[0], 3./voxels.shape[1], 3./voxels.shape[2])
 grid.origin = (-1.5, -1.5, -1.5)
 
 fluence = voxels.flatten(order="C")
 grid.cell_data["log(fluence)"] = np.log10(fluence, where=fluence>0 )  # Flatten the array!
 
-thresh = grid.threshold(value=[1, np.max(grid.cell_data["log(fluence)"])], scalars="log(fluence)")
+thresh = grid.threshold(value=[0.0000001, np.max(grid.cell_data["log(fluence)"])], scalars="log(fluence)")
 plotter.add_mesh_clip_plane(thresh, scalars="log(fluence)", assign_to_axis='z', interaction_event=vtk.vtkCommand.InteractionEvent)
 plotter.camera.position = (0.0, 0.0, -10.0)
 plotter.camera.up = (0.0, 1.0, 0.0)

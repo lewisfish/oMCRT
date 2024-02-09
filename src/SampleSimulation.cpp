@@ -242,8 +242,10 @@ OptixTraversableHandle SampleSimulation::buildSphereAccel()
 }
 
 void SampleSimulation::simulate(const int &nphotonsSqrt)
-{
-
+{   
+    launchParams.optProps.mus[0] = 10.0f;
+    launchParams.optProps.mus[1] = 5.0f;
+    launchParams.optProps.mus[2] = 1.0f;
     launchParamsBuffer.upload(&launchParams,1);
 
     optixLaunch(/*! pipeline we're launching launch: */

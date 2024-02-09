@@ -4,10 +4,12 @@
 #include "LaunchParams.h"
 #include "SampleSimulation.h"
 #include <stdio.h>
+#include "optixclass.h"
 
 #define THRESHOLD 0.01f
 #define CHANCE    0.1f
 #define PI 3.141593f
+#define EPS 1e-6f
 
 extern "C" __constant__ SimulationLaunchParams optixLaunchParams;
 
@@ -20,6 +22,11 @@ struct perRayData
     float mus;
 };
 
+struct boundaryRayData
+{
+    int count[3];
+    bool alive;
+};
 
 enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
 
@@ -52,14 +59,17 @@ extern "C" __global__ void __closesthit__simulation()
     const float t = optixGetRayTmax();
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
     prd.t = t;
-    const trianglemeshSBTdata &hg_data =  *(const trianglemeshSBTdata*)(optixGetSbtDataPointer());
+    const HitGroupData &hg_data =  *(const HitGroupData*)(optixGetSbtDataPointer());
     prd.mus = hg_data.mus;
-    
+
 }
 extern "C" __global__ void __anyhit__simulation()
 {
-    perRayData &prd = *(perRayData*)getPRD<perRayData>();
-    // prd.count++;
+    boundaryRayData &prd = *(boundaryRayData*)getPRD<boundaryRayData>();
+    const HitGroupData &hg_data =  *(const HitGroupData*)(optixGetSbtDataPointer());
+
+    const int idx = hg_data.objectID;
+    prd.count[idx] += 1;
     optixIgnoreIntersection();
 
 }
@@ -136,6 +146,49 @@ extern "C" __device__ uint32_t getVoxel(const gdt::vec3f &pos)
     return cellk*size.x*size.y + cellj*size.y+celli;
 }
 
+extern "C" __device__ int getNextMaterial(gdt::vec3f &rayPos, gdt::vec3f &rayDir)
+{
+    gdt::vec3f pos = rayPos;
+    boundaryRayData PRD = boundaryRayData();
+    PRD.alive = true;
+    PRD.count[0] = 0;
+    PRD.count[1] = 0;
+    PRD.count[2] = 0;
+
+    uint32_t u0, u1;
+    packPointer(&PRD, u0, u1);
+
+    for(;;)
+    {
+        optixTrace(optixLaunchParams.traversable,
+                    pos,
+                    rayDir,
+                    0.f,      // tmin
+                    1e20f,    // tmax
+                    0.0f,     // rayTime
+                    OptixVisibilityMask( 255 ),
+                    OPTIX_RAY_FLAG_ENFORCE_ANYHIT,// OPTIX_RAY_FLAG_NONE,
+                    SURFACE_RAY_TYPE,             // SBT offset
+                    RAY_TYPE_COUNT,               // SBT stride
+                    SURFACE_RAY_TYPE,             // missSBTIndex 
+                    u0, u1 );
+        if(!PRD.alive)break;
+    }
+
+    int matID;
+    int summ = 0;
+    for (int i = 0; i < 3; i++)
+    {
+        summ += PRD.count[i];
+        if(PRD.count[i] % 2 != 0 && PRD.count[i] > 0)
+        {
+            matID = i;
+        }
+    }
+    if(summ % 2 == 0)matID =-1;
+    return matID;
+}
+
 extern "C" __global__ void __raygen__weight()
 {
     const int ix = optixGetLaunchIndex().x;
@@ -184,7 +237,6 @@ extern "C" __global__ void __raygen__weight()
         // hgg = PRD.mat.hgg;
         // g2 = PRD.mat.g2;
 
-
         float L = -log(rnd(seed)) / mus;
         if(L > PRD.t || !PRD.alive)break;
 
@@ -221,17 +273,12 @@ extern "C" __global__ void __raygen__simulate()
     const int ix = optixGetLaunchIndex().x;
     const int iy = optixGetLaunchIndex().y;
 
-    float mus; //= 10.0f;
-    // float mua; //= 0.0f;
-    // float hgg; //= 0.0;
-    // float g2; //= hgg*hgg;
-
     // per ray data
     perRayData PRD = perRayData();
-    PRD.alive = true;
     PRD.weight = 1.0f;
     PRD.nscatt = 0;
     PRD.t = -1.0f;
+    PRD.alive = true;
 
     // for storing the payload
     uint32_t u0, u1;
@@ -239,9 +286,17 @@ extern "C" __global__ void __raygen__simulate()
 
     gdt::vec3f rayPos = gdt::vec3f(0.f);
     gdt::vec3f rayDir = emit(seed);
+    float mus;
 
     for(;;)
     {
+        int matID = getNextMaterial(rayPos, rayDir);
+        if(matID < 0){
+            mus = 0.00000001f;
+        } else
+        {
+            mus = optixLaunchParams.optProps.mus[matID];
+        }
         optixTrace(optixLaunchParams.traversable,
         rayPos,
         rayDir,
@@ -255,18 +310,21 @@ extern "C" __global__ void __raygen__simulate()
         SURFACE_RAY_TYPE,             // missSBTIndex 
         u0, u1 );                     // payload
 
-        mus = PRD.mus;
-
         float L = -log(rnd(seed)) / mus;
-        if(L > PRD.t || !PRD.alive)break;
+        if(!PRD.alive)break;
+        // hit boundary
+        if(L > PRD.t)
+        {
+            rayPos += (PRD.t+EPS) * rayDir;
+        } else
+        {
+            rayPos += L * rayDir;
+            PRD.nscatt += 1;
+            rayDir = emit(seed);
+            uint32_t fbIndex = getVoxel(rayPos);
+            atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], 1.f);
+        }
 
-        rayPos += L * rayDir;
-        rayDir = emit(seed);
-
-        uint32_t fbIndex = getVoxel(rayPos);
-        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], 1.f);
-
-        PRD.nscatt += 1;
     }
     const uint32_t nsbIndex = ix+iy*optixLaunchParams.frame.nsize.x;
     optixLaunchParams.frame.nscattBuffer[nsbIndex] = PRD.nscatt;

@@ -23,6 +23,7 @@ struct HitGroupData {
     float albedo;
     float kappa;
     float n;
+    int objectID;
 };
 
 typedef SbtRecord<RayGenData>     RaygenRecord;
