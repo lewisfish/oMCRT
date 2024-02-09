@@ -6,19 +6,15 @@
 #include "optixclass.h"
 #include "optix_helpers.h"
 
-OptixClass::OptixClass(const std::string &rg_prog, const std::string &progSuffix)
+OptixClass::OptixClass(const std::string &rg_prog, const std::string &ptxCode, const std::string &progSuffix)
 {
 
     initOptix();
     createContext();
-    createModule();
+    createModule(ptxCode);
     createRaygenPrograms(rg_prog);
-    std::string name = "__miss__";
-    name += progSuffix;
-    createMissPrograms(name);
-    name = "__closesthit__";
-    name += progSuffix;
-    createHitGroupPrograms(name);
+    createMissPrograms(progSuffix);
+    createHitGroupPrograms(progSuffix);
     createPipeline();
     buildSBT();
 }
@@ -78,7 +74,7 @@ std::vector<char> OptixClass::readData(std::string const& filename)
   return data;
 }
 
-void OptixClass::createModule()
+void OptixClass::createModule(const std::string &ptxCode)
 {
 
     moduleCompileOptions.maxRegisterCount  = 50;
@@ -94,10 +90,8 @@ void OptixClass::createModule()
     pipelineCompileOptions.pipelineLaunchParamsVariableName = "optixLaunchParams";
       
     pipelineLinkOptions.maxTraceDepth          = 2;
-      
-    std::string ptxCode_sim = "/home/lewis/postdoc/optix/mcrt/bin/oMCRT/rendererPrograms.optixir";
 
-    std::vector<char> programData = readData(ptxCode_sim);
+    std::vector<char> programData = readData(ptxCode);
 
     char log[2048];
     size_t sizeof_log = sizeof( log );
@@ -122,7 +116,7 @@ void OptixClass::createRaygenPrograms(const std::string &rg_prog)
     OptixProgramGroupOptions pgOptions = {};
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    pgDesc.raygen.module            = module;   
+    pgDesc.raygen.module            = module;
     pgDesc.raygen.entryFunctionName = rg_prog.c_str();
 
     // OptixProgramGroup raypg;
@@ -146,7 +140,9 @@ void OptixClass::createMissPrograms(const std::string &progSuffix)
     OptixProgramGroupDesc pgDesc    = {};
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_MISS;
     pgDesc.miss.module            = module;
-    pgDesc.miss.entryFunctionName = progSuffix.c_str();
+    
+    const std::string name = "__miss__" + progSuffix;
+    pgDesc.miss.entryFunctionName = name.c_str();
 
     // OptixProgramGroup raypg;
     char log[2048];
@@ -171,9 +167,12 @@ void OptixClass::createHitGroupPrograms(const std::string &progSuffix)
     pgDesc.kind                     = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     
     pgDesc.hitgroup.moduleCH            = module;
-    pgDesc.hitgroup.entryFunctionNameCH = progSuffix.c_str();//"__closesthit__render";
+    const std::string nameCH = "__closesthit__" + progSuffix;
+    pgDesc.hitgroup.entryFunctionNameCH = nameCH.c_str();
+
     pgDesc.hitgroup.moduleAH            = module;
-    pgDesc.hitgroup.entryFunctionNameAH = "__anyhit__render";
+    const std::string nameAH = "__anyhit__" + progSuffix;
+    pgDesc.hitgroup.entryFunctionNameAH = nameAH.c_str();
 
     char log[2048];
     size_t sizeof_log = sizeof( log );

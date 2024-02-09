@@ -43,14 +43,22 @@ enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
 extern "C" __global__ void __closesthit__render()
 {
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
-    prd.colour = gdt::vec3f(1.0f, 0.f, 0.f);
+    const int primID = optixGetPrimitiveIndex();
+    gdt::vec2f pos = optixGetTriangleBarycentrics();
+    if(fabsf(pos.x) < .1f || fabsf(pos.y) < .1f )
+    {
+        prd.colour = gdt::vec3f(1.f);
+    }else
+    {
+        prd.colour = gdt::vec3f(1.0f, 0.f, 0.f);
+    }
 }
 
 
 extern "C" __global__ void __miss__render()
 {
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
-    prd.colour = gdt::vec3f(1.f, 1.f, 1.f);
+    prd.colour = gdt::vec3f(0.f, 0.f, 0.f);
 }
 
 extern "C" __global__ void __anyhit__render()

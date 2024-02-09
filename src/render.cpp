@@ -1,6 +1,6 @@
 #include "render.h"
 
-Renderer::Renderer(const Model *model) : model(model), optixHandle("__raygen__camera", "render")
+Renderer::Renderer(const Model *model) : model(model), optixHandle("__raygen__camera", "/home/lewis/postdoc/optix/mcrt/bin/oMCRT/rendererPrograms.optixir", "render")
 {
     launchParams.traversable = buildAccel();
     launchParamsBuffer.alloc(sizeof(launchParams));

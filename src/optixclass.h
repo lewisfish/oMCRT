@@ -32,12 +32,12 @@ typedef SbtRecord<HitGroupData>   HitgroupRecord;
 class OptixClass
 {
 public:
-    OptixClass(const std::string &rg_prog, const std::string &progSuffix);
+    OptixClass(const std::string &rg_prog, const std::string &ptxCode, const std::string &progSuffix);
     OptixClass() = delete;
 protected:
     void initOptix();
     void createContext();
-    void createModule();
+    void createModule(const std::string &ptxCode);
     void createRaygenPrograms(const std::string &rg_prog);
     void createMissPrograms(const std::string &progSuffix);
     void createHitGroupPrograms(const std::string &progSuffix);

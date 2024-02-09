@@ -3,7 +3,7 @@
 #include <optix_function_table_definition.h>
 
 // constructor
-SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model), optixHandle(rg_prog, "simulation")
+SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model), optixHandle(rg_prog, "/home/lewis/postdoc/optix/mcrt/bin/oMCRT/simulationPrograms.optixir", "simulation")
 {
     launchParams.traversable = buildAccel();
     launchParamsBuffer.alloc(sizeof(launchParams));

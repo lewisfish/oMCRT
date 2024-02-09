@@ -46,7 +46,7 @@ enum { SURFACE_RAY_TYPE=0, RAY_TYPE_COUNT };
         return reinterpret_cast<T*>( unpackPointer( u0, u1 ) );
     }
 
-extern "C" __global__ void __closesthit__radiance()
+extern "C" __global__ void __closesthit__simulation()
 {
     const float t = optixGetRayTmax();
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
@@ -55,14 +55,14 @@ extern "C" __global__ void __closesthit__radiance()
     prd.mus = hg_data.mus;
     
 }
-extern "C" __global__ void __anyhit__radiance()
+extern "C" __global__ void __anyhit__simulation()
 {
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
     // prd.count++;
     optixIgnoreIntersection();
 
 }
-extern "C" __global__ void __miss__radiance()
+extern "C" __global__ void __miss__simulation()
 {
     perRayData &prd = *(perRayData*)getPRD<perRayData>();
     prd.alive = false;
