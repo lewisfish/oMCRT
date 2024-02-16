@@ -68,7 +68,6 @@ OptixTraversableHandle Renderer::buildAccel()
     
     vertexBuffer.resize(model->meshes.size());
     indexBuffer.resize(model->meshes.size());
-    
     OptixTraversableHandle asHandle { 0 };
     
     // ==================================================================

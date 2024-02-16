@@ -30,7 +30,4 @@ struct SimulationLaunchParams
         gdt::vec2i nsize;
     } frame;
     OptixTraversableHandle traversable;
-    struct {
-        float mus[3];
-    }optProps;
 };

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "CUDABuffer.h"
+#include "model.h"
 
 template <typename T>
 struct SbtRecord
@@ -16,14 +17,9 @@ struct SbtRecord
 struct RayGenData {};  
 struct MissData {};
 struct HitGroupData {
-    float mus;
-    float mua;
-    float hgg;
-    float g2;
-    float albedo;
-    float kappa;
-    float n;
-    int objectID;
+    gdt::vec3f *vertex;
+    gdt::vec3i *index;
+    opticalProperty *opts;
 };
 
 typedef SbtRecord<RayGenData>     RaygenRecord;
@@ -43,7 +39,7 @@ protected:
     void createMissPrograms(const std::string &progSuffix);
     void createHitGroupPrograms(const std::string &progSuffix);
     void createPipeline();
-    void buildSBT();
+    // void buildSBT(const Model *model);
     std::vector<char> readData(std::string const& filename);
 
     OptixTraversableHandle buildAccel();

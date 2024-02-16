@@ -1,11 +1,13 @@
 #include "SampleSimulation.h"
 #include <iostream>
 #include <optix_function_table_definition.h>
+#include <optix_helpers.h>
 
 // constructor
 SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_prog) : model(model), optixHandle(rg_prog, "/home/lewis/postdoc/optix/mcrt/bin/oMCRT/simulationPrograms.optixir", "simulation")
 {
     launchParams.traversable = buildAccel();
+    buildSBT(model);
     launchParamsBuffer.alloc(sizeof(launchParams));
 }
 
@@ -14,6 +16,7 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     
     vertexBuffer.resize(model->meshes.size());
     indexBuffer.resize(model->meshes.size());
+    optsBuffer.resize(model->meshes.size());
     
     OptixTraversableHandle asHandle { 0 };
     
@@ -30,6 +33,8 @@ OptixTraversableHandle SampleSimulation::buildAccel()
       TriangleMesh &mesh = *model->meshes[meshID];
       vertexBuffer[meshID].alloc_and_upload(mesh.vertex);
       indexBuffer[meshID].alloc_and_upload(mesh.index);
+      optsBuffer[meshID].alloc_and_upload(mesh.opts);
+
 
       triangleInput[meshID] = {};
       triangleInput[meshID].type
@@ -241,11 +246,61 @@ OptixTraversableHandle SampleSimulation::buildSphereAccel()
 
 }
 
+void SampleSimulation::buildSBT(const Model *model)
+{
+// ------------------------------------------------------------------
+    // build raygen records
+    // ------------------------------------------------------------------
+    std::vector<RaygenRecord> raygenRecords;
+    for (int i=0;i<optixHandle.raygenPGs.size();i++) {
+        RaygenRecord rec;
+        OPTIX_CHECK(optixSbtRecordPackHeader(optixHandle.raygenPGs[i],&rec));
+        // rec.data = nullptr; /* for now ... */
+        raygenRecords.push_back(rec);
+    }
+    optixHandle.raygenRecordsBuffer.alloc_and_upload(raygenRecords);
+    optixHandle.sbt.raygenRecord = optixHandle.raygenRecordsBuffer.d_pointer();
+
+    // ------------------------------------------------------------------
+    // build miss records
+    // ------------------------------------------------------------------
+    std::vector<MissRecord> missRecords;
+    for (int i=0;i<optixHandle.missPGs.size();i++) {
+        MissRecord rec;
+        OPTIX_CHECK(optixSbtRecordPackHeader(optixHandle.missPGs[i],&rec));
+        // rec.data = nullptr; /* for now ... */
+        missRecords.push_back(rec);
+    }
+    optixHandle.missRecordsBuffer.alloc_and_upload(missRecords);
+    optixHandle.sbt.missRecordBase          = optixHandle.missRecordsBuffer.d_pointer();
+    optixHandle.sbt.missRecordStrideInBytes = sizeof(MissRecord);
+    optixHandle.sbt.missRecordCount         = (int)missRecords.size();
+
+    // ------------------------------------------------------------------
+    // build hitgroup records
+    // ------------------------------------------------------------------
+
+    int numObjects = (int)model->meshes.size();
+    std::vector<HitgroupRecord> hitgroupRecords;
+    for (int meshID=0;meshID<numObjects;meshID++) {
+        int objectType = 0;
+        HitgroupRecord rec;
+        OPTIX_CHECK(optixSbtRecordPackHeader(optixHandle.hitgroupPGs[objectType],&rec));
+        rec.data.vertex = (gdt::vec3f*)vertexBuffer[meshID].d_pointer();
+        rec.data.index  = (gdt::vec3i*)indexBuffer[meshID].d_pointer();
+        rec.data.opts   = (opticalProperty*)optsBuffer[meshID].d_pointer();
+        hitgroupRecords.push_back(rec);
+    }
+    optixHandle.hitgroupRecordsBuffer.alloc_and_upload(hitgroupRecords);
+    optixHandle.sbt.hitgroupRecordBase          = optixHandle.hitgroupRecordsBuffer.d_pointer();
+    optixHandle.sbt.hitgroupRecordStrideInBytes = sizeof(HitgroupRecord);
+    optixHandle.sbt.hitgroupRecordCount         = (int)hitgroupRecords.size();
+}
+
+
+
 void SampleSimulation::simulate(const int &nphotonsSqrt)
 {   
-    launchParams.optProps.mus[0] = 10.0f;
-    launchParams.optProps.mus[1] = 5.0f;
-    launchParams.optProps.mus[2] = 1.0f;
     launchParamsBuffer.upload(&launchParams,1);
 
     optixLaunch(/*! pipeline we're launching launch: */

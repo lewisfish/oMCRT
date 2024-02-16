@@ -18,6 +18,7 @@ class SampleSimulation
         void resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize);
         void downloadFluence(float h_fluence[]);
         void downloadNscatt(int h_nscatt[]);
+        void buildSBT(const Model *model);
 
     protected:
         OptixTraversableHandle buildAccel();
@@ -35,6 +36,7 @@ class SampleSimulation
         const Model *model;
         std::vector<CUDABuffer> vertexBuffer;
         std::vector<CUDABuffer> indexBuffer;
+        std::vector<CUDABuffer> optsBuffer;
         //! buffer that keeps the (final, compacted) accel structure
         CUDABuffer asBuffer;
 

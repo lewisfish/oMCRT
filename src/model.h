@@ -17,6 +17,7 @@
 #pragma once
 
 #include "gdt/math/AffineSpace.h"
+#include "opticalProperty.h"
 #include <vector>
 
   /*! a simple indexed triangle mesh that our sample renderer will
@@ -24,10 +25,10 @@
   struct TriangleMesh {
     std::vector<gdt::vec3f> vertex;
     std::vector<gdt::vec3f> normal;
-    std::vector<gdt::vec2f> texcoord;
     std::vector<gdt::vec3i> index;
 
     // material data:
+    std::vector<opticalProperty> opts;
     gdt::vec3f              diffuse;
   };
   

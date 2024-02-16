@@ -15,7 +15,7 @@ void printUsageAndExit( const std::string& argv0 )
     std::cerr <<
         "App Options:\n"
         "  -h | --help                  Print this usage message and exit.\n"
-        "  -f | --file <input_file>     Model to render or simulate.\n"
+        "  -f | --file <input_file>     Json file with model to render or simulate.\n"
         "  -r | --render                Selects render mode.\n"
         "  -s | --simulate              Selects MCRT mode (default).\n"
         "\n"
@@ -25,8 +25,8 @@ void printUsageAndExit( const std::string& argv0 )
 }
 
 int main(int argc, char** argv)
-{
-    std::string model_file = "models/sphere.obj";
+{    
+    std::string model_file = "models/spheres.json";
     bool render_mode = false;
     for (int i = 1; i < argc; ++i)
     {
@@ -39,10 +39,15 @@ int main(int argc, char** argv)
         {
             if( i == argc-1)
             {
-                std::cerr << "Option'" << arg << "' requires additional argument" <<std::endl;
+                std::cerr << "Option '" << arg << "' requires additional argument" <<std::endl;
                 printUsageAndExit(argv[0]);
             }
             model_file = argv[++i];
+            size_t lastIndex = model_file.find_first_of(".");
+            if(model_file.substr(lastIndex) != ".json"){
+                std::cerr << "Option '" << arg << "' additional argument must be a .json file!" <<std::endl;
+                printUsageAndExit(argv[0]);
+            };
         }
         else if(arg == "-s" || arg == "--simulate")
         {
@@ -56,6 +61,7 @@ int main(int argc, char** argv)
     }
 
     Model *model = loadOBJ(model_file);
+    // return 0;
 
     if(render_mode)
     {
@@ -74,7 +80,7 @@ int main(int argc, char** argv)
         int nphotonsSqrt = 10000;
         SampleSimulation sim(model, "__raygen__simulate");
 
-        const gdt::vec3i fbSize(gdt::vec3i(100,100, 100));
+        const gdt::vec3i fbSize(gdt::vec3i(200,200, 200));
         const gdt::vec2i nsSize(gdt::vec2i(nphotonsSqrt,nphotonsSqrt));
         sim.resizeOutputBuffers(fbSize, nsSize);
         std::vector<float> fluence(fbSize.x*fbSize.y*fbSize.z);

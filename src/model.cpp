@@ -15,6 +15,10 @@
 // ======================================================================== //
 
 #include "model.h"
+#include "opticalProperty.h"
+#include "json.h"
+using json = nlohmann::json;
+
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "../ext/tiny/tiny_obj_loader.h"
 //std
@@ -30,8 +34,8 @@ namespace std {
     if (a.normal_index < b.normal_index) return true;
     if (a.normal_index > b.normal_index) return false;
     
-    if (a.texcoord_index < b.texcoord_index) return true;
-    if (a.texcoord_index > b.texcoord_index) return false;
+    // if (a.texcoord_index < b.texcoord_index) return true;
+    // if (a.texcoord_index > b.texcoord_index) return false;
     
     return false;
   }
@@ -60,14 +64,14 @@ namespace std {
       while (mesh->normal.size() < mesh->vertex.size())
         mesh->normal.push_back(normal_array[idx.normal_index]);
     }
-    if (idx.texcoord_index >= 0) {
-      while (mesh->texcoord.size() < mesh->vertex.size())
-        mesh->texcoord.push_back(texcoord_array[idx.texcoord_index]);
-    }
+    // if (idx.texcoord_index >= 0) {
+    //   while (mesh->texcoord.size() < mesh->vertex.size())
+    //     mesh->texcoord.push_back(texcoord_array[idx.texcoord_index]);
+    // }
 
-    // just for sanity's sake:
-    if (mesh->texcoord.size() > 0)
-      mesh->texcoord.resize(mesh->vertex.size());
+    // // just for sanity's sake:
+    // if (mesh->texcoord.size() > 0)
+    //   mesh->texcoord.resize(mesh->vertex.size());
     // just for sanity's sake:
     if (mesh->normal.size() > 0)
       mesh->normal.resize(mesh->vertex.size());
@@ -75,13 +79,31 @@ namespace std {
     return newID;
   }
   
-  Model *loadOBJ(const std::string &objFile)
+  void parseJson(std::vector<opticalProperty> &opts, std::string &objFile, const std::string &jsonFile)
+  {
+
+      std::ifstream f(jsonFile);
+      json data = json::parse(f);
+      objFile = data["file"];
+      float mus = data["inside"]["mus"];
+      float mua = data["inside"]["mua"];
+      opts.push_back(opticalProperty(mus, mua, 1.f, 0.0f));
+      mus = data["outside"]["mus"];
+      mua = data["outside"]["mua"];
+      opts.push_back(opticalProperty(mus, mua, 1.f, 0.0f));
+  }
+
+
+  Model *loadOBJ(const std::string &jsonFile)
   {
     Model *model = new Model;
 
+    std::vector<opticalProperty> opts;
+    std::string objFile;
+    parseJson(opts, objFile, jsonFile);
+
     const std::string mtlDir
       = objFile.substr(0,objFile.rfind('/')+1);
-    PRINT(mtlDir);
     
     tinyobj::attrib_t attributes;
     std::vector<tinyobj::shape_t> shapes;
@@ -94,15 +116,12 @@ namespace std {
                          &materials,
                          &err,
                          &err,
-						 objFile.c_str(),
+						             objFile.c_str(),
                          mtlDir.c_str(),
                          /* triangulate */true);
     if (!readOK) {
       throw std::runtime_error("Could not read OBJ model from "+objFile+":"+mtlDir+" : "+err);
     }
-
-    // if (materials.empty())
-    //   throw std::runtime_error("could not parse materials ...");
 
     std::cout << "Done loading obj file - found " << shapes.size() << " shapes with " << materials.size() << " materials" << std::endl;
     for (int shapeID=0;shapeID<(int)shapes.size();shapeID++) {
@@ -126,7 +145,6 @@ namespace std {
                     addVertex(mesh, attributes, idx1, knownVertices),
                     addVertex(mesh, attributes, idx2, knownVertices));
           mesh->index.push_back(idx);
-          // mesh->diffuse = (const gdt::vec3f&)materials[materialID].diffuse;
           mesh->diffuse = gdt::randomColor(materialID);
         }
 
@@ -143,6 +161,12 @@ namespace std {
       for (auto vtx : mesh->vertex)
         model->bounds.extend(vtx);
 
+
+      for (int idx= 0; idx< model->meshes.size(); idx++)
+      {
+        model->meshes[idx]->opts.push_back(opts[0]);
+        model->meshes[idx]->opts.push_back(opts[1]);
+      }
     std::cout << "created a total of " << model->meshes.size() << " meshes" << std::endl;
     return model;
   }
