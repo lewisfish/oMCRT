@@ -101,4 +101,42 @@ plotter.add_mesh_clip_plane(thresh, scalars="log(fluence)", assign_to_axis='z', 
 plotter.camera.position = (0.0, 0.0, -10.0)
 plotter.camera.up = (0.0, 1.0, 0.0)
 
+## TODO -> fix camera movement to be relative to screen
+def camDown(*args):
+    cam = plotter.camera
+    pos = cam.position
+    fp = cam.focal_point
+    plotter.camera.position = (pos[0], pos[1] - 1., pos[2])
+    plotter.camera.focal_point = (fp[0], fp[1] - 1., fp[2])
+    plotter.render()
+
+def camUp(*args):
+    cam = plotter.camera
+    pos = cam.position
+    fp = cam.focal_point
+    plotter.camera.position = (pos[0], pos[1] + 1., pos[2])
+    plotter.camera.focal_point = (fp[0], fp[1] + 1., fp[2])
+    plotter.render()
+
+def camLeft(*args):
+    cam = plotter.camera
+    pos = cam.position
+    fp = cam.focal_point
+    plotter.camera.position = (pos[0] - 1., pos[1], pos[2])
+    plotter.camera.focal_point = (fp[0] - 1., fp[1], fp[2])
+    plotter.render()
+
+def camRight(*args):
+    cam = plotter.camera
+    pos = cam.position
+    fp = cam.focal_point
+    plotter.camera.position = (pos[0] + 1., pos[1], pos[2])
+    plotter.camera.focal_point = (fp[0] + 1., fp[1], fp[2])
+    plotter.render()
+
+plotter.add_key_event('Down', camDown)
+plotter.add_key_event('Up', camUp)
+plotter.add_key_event('Right', camRight)
+plotter.add_key_event('Left', camLeft)
+
 plotter.show()
