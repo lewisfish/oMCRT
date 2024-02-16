@@ -85,7 +85,7 @@ filename = args.file
 plotter = pv.Plotter()
 
 mesh = pv.read("models/" + filename + ".obj")
-plotter.add_mesh(mesh, style='wireframe', opacity=.1)
+actor = plotter.add_mesh(mesh, style='wireframe', opacity=.1)
 
 voxels, hdr = read_nrrd(filename + ".nrrd")
 grid = pv.UniformGrid()
@@ -134,6 +134,16 @@ def camRight(*args):
     plotter.camera.focal_point = (fp[0] + 1., fp[1], fp[2])
     plotter.render()
 
+def setWireframe(*args):
+    """toggle from wireframe to surface"""
+    prop = actor.GetProperty()
+    if prop.GetRepresentation() == 1:
+        prop.SetRepresentationToSurface()
+    else:
+        prop.SetRepresentationToWireframe()
+    plotter.render()
+
+plotter.add_key_event("v", setWireframe)
 plotter.add_key_event('Down', camDown)
 plotter.add_key_event('Up', camUp)
 plotter.add_key_event('Right', camRight)
