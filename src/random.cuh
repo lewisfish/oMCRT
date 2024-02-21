@@ -59,11 +59,36 @@ static __host__ __device__ __inline__ unsigned int lcg2(unsigned int &prev) {
 }
 
 // Generate random float in [0, 1)
-static __host__ __device__ __inline__ float rnd(unsigned int &prev) {
-  return ((float)lcg(prev) / (float)0x01000000);
-}
+// static __host__ __device__ __inline__ float rnd(unsigned int &prev) {
+//   return ((float)lcg(prev) / (float)0x01000000);
+// }
 
 static __host__ __device__ __inline__ unsigned int rot_seed(
     unsigned int seed, unsigned int frame) {
   return seed ^ frame;
+}
+
+static __host__ __device__ __inline__ uint64_t XorShift64(uint64_t& state)
+{
+    uint64_t x = state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    state = x;
+    return x;
+}
+
+static __host__ __device__ __inline__ uint32_t XorShift32(uint32_t& state)
+{
+    uint32_t x = state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 15;
+    state = x;
+    return x;
+}
+
+static __host__ __device__ __inline__ float rnd(uint64_t& state)
+{
+    return (XorShift64(state) & 0xFFFFFF) / 16777216.0f;
 }

@@ -59,8 +59,8 @@ int main(int argc, char** argv)
         }
 
     }
-
-    Model *model = loadOBJ(model_file);
+    std::string outFile;
+    Model *model = loadOBJ(model_file, outFile);
     // return 0;
 
     if(render_mode)
@@ -91,14 +91,23 @@ int main(int argc, char** argv)
         auto t1 = std::chrono::system_clock::now(); // toc
 
         auto diff = std::chrono::duration<float>(t1 - t0).count();
-        std::cout << std::setprecision(4) << "MPhotons/s: " << (nphotonsSqrt*nphotonsSqrt/(diff))/1000000 << std::endl;
+        auto nphotons = nphotonsSqrt*nphotonsSqrt;
+        if(nphotons > 1000000)
+        {
+            std::cout << "Ran " << (nphotons)/1000000 << " million photons." << std::endl;
+        } 
+        else
+        {
+            std::cout << "Ran " << (nphotons) << " photons." << std::endl;
+        }
+        std::cout << std::setprecision(4) << "MPhotons/s: " << (nphotons/(diff))/1000000 << std::endl;
 
         sim.downloadFluence(fluence.data());
         sim.downloadNscatt(nscatts.data());
 
         // remove folder and file extension
-        size_t lastIndex = model_file.find_first_of(".");
-        std::string outName = model_file.substr(0, lastIndex);
+        size_t lastIndex = outFile.find_first_of(".");
+        std::string outName = outFile.substr(0, lastIndex);
         size_t firstIndex = outName.find_first_of("/");
         outName = outName.substr(firstIndex+1);
         // write out nrrd file

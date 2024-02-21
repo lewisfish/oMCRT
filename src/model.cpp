@@ -94,13 +94,14 @@ namespace std {
   }
 
 
-  Model *loadOBJ(const std::string &jsonFile)
+  Model *loadOBJ(const std::string &jsonFile, std::string &outFile)
   {
     Model *model = new Model;
 
     std::vector<opticalProperty> opts;
     std::string objFile;
     parseJson(opts, objFile, jsonFile);
+    outFile = objFile;
 
     const std::string mtlDir
       = objFile.substr(0,objFile.rfind('/')+1);

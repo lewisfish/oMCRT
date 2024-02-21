@@ -88,16 +88,19 @@ mesh = pv.read("models/" + filename + ".obj")
 actor = plotter.add_mesh(mesh, style='wireframe', opacity=.1)
 
 voxels, hdr = read_nrrd(filename + ".nrrd")
+print(f"plotting {filename}.nrrd")
 grid = pv.UniformGrid()
 grid.dimensions = np.array(voxels.shape) + 1
 grid.spacing = (3./voxels.shape[0], 3./voxels.shape[1], 3./voxels.shape[2])
 grid.origin = (-1.5, -1.5, -1.5)
 
 fluence = voxels.flatten(order="C")
-grid.cell_data["log(fluence)"] = np.log10(fluence, where=fluence>0 )  # Flatten the array!
+grid.cell_data["log(fluence)"] = np.log10(fluence, where=fluence>0 )
 
 thresh = grid.threshold(value=[0.0000001, np.max(grid.cell_data["log(fluence)"])], scalars="log(fluence)")
 plotter.add_mesh_clip_plane(thresh, scalars="log(fluence)", assign_to_axis='z', interaction_event=vtk.vtkCommand.InteractionEvent)
+plotter.add_mesh_clip_plane(mesh, assign_to_axis='z', interaction_event=vtk.vtkCommand.InteractionEvent)
+
 plotter.camera.position = (0.0, 0.0, -10.0)
 plotter.camera.up = (0.0, 1.0, 0.0)
 
