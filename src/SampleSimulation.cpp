@@ -324,9 +324,9 @@ void SampleSimulation::simulate(const int &nphotonsSqrt)
 
 void SampleSimulation::resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, const gdt::vec2i &nscattNewSize)
 {
-
     // resize our cuda fluence buffer
-    fluenceBuffer.resize(fluenceNewSize.x*fluenceNewSize.y*fluenceNewSize.z*sizeof(float));
+    // padded with extra space for garbage data
+    fluenceBuffer.resize(((fluenceNewSize.x*fluenceNewSize.y*fluenceNewSize.z)+1)*sizeof(float));
     // resize nscatt buffer
     nscattBuffer.resize(nscattNewSize.x*nscattNewSize.y*sizeof(int));
 
@@ -336,10 +336,7 @@ void SampleSimulation::resizeOutputBuffers(const gdt::vec3i &fluenceNewSize, con
     launchParams.frame.fluenceBuffer = (float*)fluenceBuffer.d_pointer();
     launchParams.frame.nsize = nscattNewSize;
     launchParams.frame.nscattBuffer = (int*)nscattBuffer.d_pointer();
-
 }
-
-
 
 void SampleSimulation::downloadNscatt(int h_nscatt[])
 {

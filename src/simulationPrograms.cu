@@ -153,10 +153,79 @@ extern "C" __device__ gdt::vec3f scatter(gdt::vec3f &dir, const float &hgg, cons
 extern "C" __device__ uint32_t getVoxel(const gdt::vec3f &pos)
 {   
     gdt::vec3i size = optixLaunchParams.frame.size;
-    int celli = max(min((int)floorf(size.x * (pos.x + 1.5f) / (3.0f)), size.x), 0);
-    int cellj = max(min((int)floorf(size.y * (pos.y + 1.5f) / (3.0f)), size.y), 0);
-    int cellk = max(min((int)floorf(size.z * (pos.z + 1.5f) / (3.0f)), size.z), 0);
-    return cellk*size.x*size.y + cellj*size.y+celli;
+    int celli = (int)floorf(size.x * (pos.x + 1.5f) / (3.0f));
+    int cellj = (int)floorf(size.y * (pos.y + 1.5f) / (3.0f));
+    int cellk = (int)floorf(size.z * (pos.z + 1.5f) / (3.0f));
+
+    if(celli < 0 || cellj < 0 || cellk < 0)
+    {
+        return size.z*size.x*size.y + size.y*size.y+size.x+1;
+    }
+    else if(celli > size.x || cellj > size.y || cellk > size.z)
+    {
+        return size.z*size.x*size.y + size.y*size.y+size.x+1;
+    } else
+    {
+        uint32_t ret = cellk*size.x*size.y + cellj*size.y+celli;
+        return ret;
+    }
+}
+
+extern "C" __device__ void hitSurface(gdt::vec3f &rayPos, gdt::vec3f &rayDir, perRayData &PRD, float &tau, float &L)
+{
+    for(;;)
+    {
+        // hit surface and move just over it
+        rayPos += (PRD.t+EPS) * rayDir;
+
+        uint32_t fbIndex = getVoxel(rayPos);
+        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
+
+        uint32_t u0, u1;
+        packPointer(&PRD, u0, u1);
+
+        // calculate remaining L
+        float taurun = (PRD.t+EPS) * PRD.kappa;
+        tau -= taurun;
+        // get new t
+        optixTrace(optixLaunchParams.traversable,
+                    rayPos,
+                    rayDir,
+                    0.f,      // tmin
+                    1e20f,    // tmax
+                    0.0f,     // rayTime
+                    OptixVisibilityMask( 255 ),
+                    OPTIX_RAY_FLAG_DISABLE_ANYHIT,// OPTIX_RAY_FLAG_NONE,
+                    SURFACE_RAY_TYPE,             // SBT offset
+                    RAY_TYPE_COUNT,               // SBT stride
+                    SURFACE_RAY_TYPE,             // missSBTIndex 
+                    u0, u1 );
+
+        if(!PRD.alive)break;
+
+        L = tau / PRD.kappa;
+        if(L < PRD.t)
+        {
+            // calculate remaining L
+            float taurun = (PRD.t+EPS) * PRD.kappa;
+            float tmp;
+            if(taurun > tau){
+                taurun = tau;
+            }
+            tmp = taurun / PRD.kappa;
+            rayPos += tmp * rayDir;
+            uint32_t fbIndex = getVoxel(rayPos);
+            atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
+            tau -= taurun;
+            break;
+        }
+    }   
+    // }
+    // else
+    // {
+    //     // PRD.alive = false;
+    //     hitSurface(rayPos, rayDir, PRD, tau, L);
+    // }
 }
 
 extern "C" __global__ void __raygen__weight()
@@ -257,7 +326,6 @@ extern "C" __global__ void __raygen__simulate()
 
     gdt::vec3f rayPos = gdt::vec3f(0.f);
     gdt::vec3f rayDir = emit(seed);
-
     float tau = -log(rnd(seed));
     float L =  tau / PRD.kappa;
 
@@ -280,6 +348,9 @@ extern "C" __global__ void __raygen__simulate()
 
         if(L < PRD.t){
             rayPos += L * rayDir;
+            uint32_t fbIndex = getVoxel(rayPos);
+            atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
+
             if(rnd(seed) < PRD.albedo){
                 rayDir = scatter(rayDir, 0.f, 0.f, seed);
                 PRD.nscatt += 1;
@@ -291,65 +362,16 @@ extern "C" __global__ void __raygen__simulate()
                 PRD.alive = false;
                 break;
             }
-
-            // uint32_t fbIndex = getVoxel(rayPos);
-            // atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
         } else 
         { 
-            // hit surface and move just over it
-            rayPos += (PRD.t+EPS) * rayDir;
             uint32_t fbIndex = getVoxel(rayPos);
             atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
 
-            // calculate remaining L
-            float taurun = (PRD.t+EPS) * PRD.kappa;
-            tau -= taurun;
-            // get new t
-            optixTrace(optixLaunchParams.traversable,
-                        rayPos,
-                        rayDir,
-                        0.f,      // tmin
-                        1e20f,    // tmax
-                        0.0f,     // rayTime
-                        OptixVisibilityMask( 255 ),
-                        OPTIX_RAY_FLAG_DISABLE_ANYHIT,// OPTIX_RAY_FLAG_NONE,
-                        SURFACE_RAY_TYPE,             // SBT offset
-                        RAY_TYPE_COUNT,               // SBT stride
-                        SURFACE_RAY_TYPE,             // missSBTIndex 
-                        u0, u1 );
+            hitSurface(rayPos, rayDir, PRD, tau, L);
             if(!PRD.alive)break;
-            L = tau / PRD.kappa;
-            if(L > PRD.t)
-            {
-                // calculate remaining L
-                float taurun = (PRD.t+EPS) * PRD.kappa;
-                float tmp;
-                if(taurun > tau){
-                    taurun = tau;
-                }
-                tmp = taurun / PRD.kappa;
-                rayPos += tmp * rayDir;
-                tau -= taurun;
-            }
-            else
-            {
-                rayPos += L * rayDir;
-                if(rnd(seed) < PRD.albedo){
-                    rayDir = scatter(rayDir, 0.f, 0.f, seed);
-                    PRD.nscatt += 1;
-                    tau = -log(rnd(seed));
-                    L =  tau / PRD.kappa;
-                }
-                else
-                {
-                    PRD.alive = false;
-                    break;
-                }
-            }
         }
-        uint32_t fbIndex = getVoxel(rayPos);
-        atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
-
+        // uint32_t fbIndex = getVoxel(rayPos);
+        // atomicAdd(&optixLaunchParams.frame.fluenceBuffer[fbIndex], PRD.kappa);
     }
     const uint32_t nsbIndex = ix+iy*optixLaunchParams.frame.nsize.x;
     optixLaunchParams.frame.nscattBuffer[nsbIndex] = PRD.nscatt;
