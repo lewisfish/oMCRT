@@ -20,6 +20,7 @@ struct HitGroupData {
     gdt::vec3f *vertex;
     gdt::vec3i *index;
     opticalProperty *opts;
+    int objID;
 };
 
 typedef SbtRecord<RayGenData>     RaygenRecord;

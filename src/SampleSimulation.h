@@ -22,7 +22,6 @@ class SampleSimulation
 
     protected:
         OptixTraversableHandle buildAccel();
-        OptixTraversableHandle buildSphereAccel();
 
         OptixClass optixHandle;
 

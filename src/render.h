@@ -24,9 +24,11 @@ class Renderer
         void resize(const gdt::vec2i &newSize);
         void downloadPixels(uint32_t h_pixels[]);
         void setCamera(const Camera &camera);
+        void buildSBT(const Model *model);
 
     protected:
         OptixTraversableHandle buildAccel();
+        OptixTraversableHandle buildIAS(const OptixTraversableHandle &trav);
 
         OptixClass optixHandle;
 

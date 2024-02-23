@@ -80,7 +80,7 @@ void OptixClass::createModule(const std::string &ptxCode)
     moduleCompileOptions.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
     pipelineCompileOptions = {};
-    pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+    pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY;
     pipelineCompileOptions.usesMotionBlur     = false;
     pipelineCompileOptions.numPayloadValues   = 2;
     pipelineCompileOptions.numAttributeValues = 2;
@@ -219,6 +219,6 @@ void OptixClass::createPipeline()
                  2*1024,
                  /* [in] The maximum depth of a traversable graph
                     passed to trace. */
-                 1));
+                 2));
     if (sizeof_log > 1)std::cout << log << std::endl;
 }

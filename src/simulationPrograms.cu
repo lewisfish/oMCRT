@@ -166,8 +166,7 @@ extern "C" __device__ uint32_t getVoxel(const gdt::vec3f &pos)
         return size.z*size.x*size.y + size.y*size.y+size.x+1;
     } else
     {
-        uint32_t ret = cellk*size.x*size.y + cellj*size.y+celli;
-        return ret;
+        return cellk*size.x*size.y + cellj*size.y+celli;
     }
 }
 

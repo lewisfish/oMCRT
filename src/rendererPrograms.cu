@@ -49,7 +49,8 @@ extern "C" __global__ void __closesthit__render()
         prd.colour = gdt::vec3f(1.f);
     }else
     {
-        prd.colour = gdt::vec3f(1.0f, 0.f, 0.f);
+        const HitGroupData &hg_data =  *(const HitGroupData*)(optixGetSbtDataPointer());
+        prd.colour = gdt::randomColor(hg_data.objID);
     }
 }
 

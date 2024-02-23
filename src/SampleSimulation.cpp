@@ -13,7 +13,6 @@ SampleSimulation::SampleSimulation(const Model *model, const std::string &rg_pro
 
 OptixTraversableHandle SampleSimulation::buildAccel()
 {
-    
     vertexBuffer.resize(model->meshes.size());
     indexBuffer.resize(model->meshes.size());
     optsBuffer.resize(model->meshes.size());
@@ -77,13 +76,13 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     accelOptions.operation              = OPTIX_BUILD_OPERATION_BUILD;
     
     OptixAccelBufferSizes blasBufferSizes;
-    optixAccelComputeMemoryUsage
+    OPTIX_CHECK(optixAccelComputeMemoryUsage
                 (optixHandle.optixContext,
                  &accelOptions,
                  triangleInput.data(),
                  (int)model->meshes.size(),  // num_build_inputs
                  &blasBufferSizes
-                 );
+                 ));
     
     // ==================================================================
     // prepare compaction
@@ -148,103 +147,6 @@ OptixTraversableHandle SampleSimulation::buildAccel()
     return asHandle;
   }
 
-
-OptixTraversableHandle SampleSimulation::buildSphereAccel()
-{
-
-    OptixTraversableHandle asHandle;
-    CUdeviceptr            d_gas_output_buffer;
-
-    sphereVertexBuffer.resize(0);
-    sphereRadiusBuffer.resize(0);
-
-    std::vector<gdt::vec3f> sphereVertex(5);
-    std::vector<gdt::vec3f> sphereRadii(5);
-
-    for (auto i = 0; i < 5; i++)
-    {
-        sphereVertex.push_back(gdt::vec3f((float)i, 0.f, (0.f)));
-        sphereRadii.push_back(1.f);
-    }
-    
-    std::vector<OptixBuildInput> sphereInput(5);
-    std::vector<CUdeviceptr> d_vertices(5);
-    std::vector<CUdeviceptr> d_radius(5);
-    std::vector<uint32_t> sphereInputFlags(5);
-
-    sphereVertexBuffer[0].alloc_and_upload(sphereVertex);
-    sphereRadiusBuffer[0].alloc_and_upload(sphereRadii);
-    for (int sphereID = 0; sphereID < 1; sphereID++)
-    {
-        sphereInput[sphereID] = {};
-        sphereInput[sphereID].type = OPTIX_BUILD_INPUT_TYPE_SPHERES;
-
-        d_vertices[sphereID] = sphereVertexBuffer[sphereID].d_pointer();
-        d_radius[sphereID] = sphereRadiusBuffer[sphereID].d_pointer();
-
-        sphereInput[sphereID].sphereArray.vertexBuffers = &d_vertices[sphereID];
-        sphereInput[sphereID].sphereArray.numVertices = 5;
-        sphereInput[sphereID].sphereArray.radiusBuffers = &d_radius[sphereID];
-
-        uint32_t sphereInputFlags[sphereID] = {OPTIX_GEOMETRY_FLAG_NONE};
-        sphereInput[sphereID].sphereArray.flags = sphereInputFlags;
-        sphereInput[sphereID].sphereArray.numSbtRecords = 1;
-    }
-    // BLAS setup
-    OptixAccelBufferSizes blasBufferSizes;
-    OptixAccelBuildOptions accelOptions = {};
-    accelOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
-    accelOptions.operation  = OPTIX_BUILD_OPERATION_BUILD;
-    optixAccelComputeMemoryUsage(optixHandle.optixContext, &accelOptions, sphereInput.data(), 1, &blasBufferSizes);
-
-    // Prepare compaction
-
-    CUDABuffer compactedSizeBuffer;
-    compactedSizeBuffer.alloc(sizeof(uint64_t));
-
-    OptixAccelEmitDesc emitDesc;
-    emitDesc.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-    emitDesc.result = compactedSizeBuffer.d_pointer();
-
-    // execute build (main stage)
-
-    CUDABuffer tempBuffer;
-    tempBuffer.alloc(blasBufferSizes.tempSizeInBytes);
-
-    CUDABuffer outputBuffer;
-    outputBuffer.alloc(blasBufferSizes.outputSizeInBytes);
-
-    optixAccelBuild(optixHandle.optixContext, 0,
-                    &accelOptions, sphereInput.data(),
-                    5,
-                    tempBuffer.d_pointer(),
-                    tempBuffer.sizeInBytes,
-                    outputBuffer.d_pointer(),
-                    outputBuffer.sizeInBytes,
-                    &asHandle,
-                    &emitDesc, 1);
-    cudaDeviceSynchronize();
-
-    // perfrom compaction
-    uint64_t compactedSize;
-    compactedSizeBuffer.download(&compactedSize, 1);
-    iasBuffer.alloc(compactedSize);
-    optixAccelCompact(optixHandle.optixContext,
-                        0,
-                        asHandle,
-                        asBuffer.d_pointer(),
-                        iasBuffer.sizeInBytes,
-                        &asHandle);
-    cudaDeviceSynchronize();
-
-    //clean up
-    outputBuffer.free();
-    tempBuffer.free();
-    compactedSizeBuffer.free();
-
-    return asHandle;   
-
-}
 
 void SampleSimulation::buildSBT(const Model *model)
 {
